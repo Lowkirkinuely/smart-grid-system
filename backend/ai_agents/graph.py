@@ -174,11 +174,26 @@ def node_synthesize(state: GridAnalysisState) -> dict:
     if gh.get("cascading_failure_risk") and llm_risk == "high":
         llm_risk = "critical"
 
-    # ML + LLM fusion
-    ml_risk    = ml.get("ml_risk_level", "unknown")
-    ml_conf    = ml.get("ml_confidence", 0.0)
-    final_risk = fuse_risk(llm_risk, ml_risk)
-    final_risk = should_escalate_for_anomaly(final_risk, ml.get("anomaly_detected", False))
+    # ── ML + LLM fusion ───────────────────────────────────────────────────────
+    ml_risk  = ml.get("ml_risk_level", "unknown")
+    ml_conf  = ml.get("ml_confidence", 0.0)
+
+    # Weighted vote: LLM gets 60%, ML gets 40%
+    if ml_risk != "unknown":
+        llm_score = risk_order.get(llm_risk, 0) * 0.60
+        ml_score  = risk_order.get(ml_risk, 0)  * 0.40
+        fused_idx = round(llm_score + ml_score)
+        fused_idx = max(0, min(3, fused_idx))
+        final_risk = RISK_REVERSE[fused_idx]
+    else:
+        final_risk = llm_risk
+
+    # ── Disagreement detection ────────────────────────────────────────────────
+
+    llm_idx  = risk_order.get(llm_risk, 0)
+    ml_idx   = risk_order.get(ml_risk, 0) if ml_risk != "unknown" else llm_idx
+    gap      = abs(llm_idx - ml_idx)
+    disagree = gap >= 3  # e.g. ML says critical, LLM says low
 
     # Disagreement detection
     disagree = check_disagreement(llm_risk, ml_risk)
@@ -186,19 +201,21 @@ def node_synthesize(state: GridAnalysisState) -> dict:
         logger.warning(f"[SYNTHESIZER] ML/LLM disagreement — ML: {ml_risk}, LLM: {llm_risk}")
         print(f"\033[33m  ⚡ [DISAGREEMENT] ML says '{ml_risk}', LLM says '{llm_risk}' — forcing HITL\033[0m")
 
-    # Fused confidence
-    fused_conf = calculate_fused_confidence(
-        llm_confidences=[
-            gh.get("confidence", 0.5),
-            da.get("confidence", 0.5),
-            dr.get("confidence", 0.5),
-            ps.get("confidence", 0.5)
-        ],
-        ml_confidence=ml_conf,
-        error_count=len(errors)
-    )
+    # ── Anomaly bump ──────────────────────────────────────────────────────────
+    if ml.get("anomaly_detected") and risk_order.get(final_risk, 0) < 1:
+        print(f"\033[33m  ⚠️  Anomaly detected — escalating risk from {final_risk} to high\033[0m")
+        final_risk = "high"
 
-    # Recommendations
+    # ── Confidence ────────────────────────────────────────────────────────────
+    llm_confidences = [
+        gh.get("confidence", 0.5), da.get("confidence", 0.5),
+        dr.get("confidence", 0.5), ps.get("confidence", 0.5)
+    ]
+    llm_avg_conf   = sum(llm_confidences) / len(llm_confidences)
+    fused_conf     = round((llm_avg_conf * 0.6) + (ml_conf * 0.4) - len(errors) * 0.05, 2)
+    fused_conf     = max(0.0, fused_conf)
+
+    # ── Recommendations ───────────────────────────────────────────────────────
     recommendations = []
     if gh.get("overload"):
         recommendations.append("⚡ Immediate load shedding required — grid overloaded")
