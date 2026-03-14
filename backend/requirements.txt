@@ -1,0 +1,32 @@
+# Core LLM & Agent Framework
+langchain
+langchain-core
+langchain-groq
+langgraph
+
+# Groq API
+groq
+
+# Web Framework & Async
+fastapi
+uvicorn
+websockets
+httpx
+aiohttp
+
+# Optimization & Data Processing
+ortools
+pydantic
+python-dotenv
+
+# HTTP & Requests
+requests
+flask
+
+# Testing
+pytest
+pytest-asyncio
+
+# Utilities
+python-dateutil
+typing-extensions
