@@ -3,7 +3,6 @@ import { GlobalHeader } from "./components/dashboard/global-header";
 import { OperatorSidebar } from "./components/dashboard/operator-sidebar";
 import { AgentSidebar } from "./components/dashboard/agent-sidebar";
 import { PlanDrawer } from "./components/dashboard/plan-drawer";
-import { TestDashboard } from "./components/dashboard/test-dashboard";
 import { GridProvider } from "./lib/context";
 
 export default function PowerGridDashboard() {
@@ -37,11 +36,6 @@ export default function PowerGridDashboard() {
         <div className="pointer-events-auto flex justify-center">
           <PlanDrawer />
         </div>
-      </div>
-
-      {/* Test Dashboard - Bottom Right */}
-      <div className="absolute bottom-0 right-0 p-6 pointer-events-auto">
-        <TestDashboard />
       </div>
     </main>
     </GridProvider>
