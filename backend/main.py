@@ -1,6 +1,6 @@
 """
 Smart Grid — Human-in-the-Loop Backend
-FastAPI server with AI agents, OR-Tools optimization, HITL WebSocket.
+FastAPI server with AI agents, OR-Tools optimization, HITL WebSocket, MongoDB persistence.
 """
 
 import os
@@ -25,6 +25,7 @@ from websocket_manager import manager
 from optimizer import optimize_power, optimizer, format_plans_for_broadcast
 from ai_agents.graph import run_analysis, resume_with_human_decision, get_graph_structure
 from ml.model import ml_model
+from database import db
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Smart Grid — Human-in-the-Loop Backend",
-    description="AI multi-agent analysis + OR-Tools optimization + HITL WebSocket",
+    description="AI multi-agent analysis + OR-Tools optimization + HITL WebSocket + MongoDB",
     version="2.0.0"
 )
 
@@ -67,6 +68,7 @@ class HealthResponse(BaseModel):
     ml_samples:         int
     ml_trained:         bool
     paused_threads:     List[str]
+    db_connected:       bool
 
 class GridStateResponse(BaseModel):
     status:                  str
@@ -89,24 +91,35 @@ current_thread_id  = None
 paused_threads: set = set()
 state_lock = asyncio.Lock()
 
-# ── Startup event ──────────────────────────────────────────────────────────────
+# ── Lifecycle ──────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
 async def startup_event():
+    await db.connect()
     print("\n" + "="*65)
     print("  Smart Grid — Human-in-the-Loop Backend  v2.0.0")
     print("="*65)
     print("  Endpoints:")
-    print("    GET    /health            Health check + ML stats")
-    print("    POST   /grid-state        Analyze + optimize grid")
-    print("    GET    /status            Current state snapshot")
-    print("    GET    /ml/stats          ML model learning progress")
-    print("    GET    /workflow-info     LangGraph pipeline structure")
-    print("    GET    /strategies-info   Optimizer plan descriptions")
-    print("    GET    /ws-stats          WebSocket statistics")
-    print("    WS     /ws                Real-time operator dashboard")
+    print("    GET    /health                  Health check + ML stats")
+    print("    POST   /grid-state              Analyze + optimize grid")
+    print("    GET    /status                  Current state snapshot")
+    print("    GET    /ml/stats                ML model learning progress")
+    print("    GET    /workflow-info           LangGraph pipeline structure")
+    print("    GET    /strategies-info         Optimizer plan descriptions")
+    print("    GET    /ws-stats                WebSocket statistics")
+    print("    GET    /history/grid            Grid state history (MongoDB)")
+    print("    GET    /history/analyses        AI analysis history (MongoDB)")
+    print("    GET    /history/decisions       Human decision audit log (MongoDB)")
+    print("    GET    /history/decisions/stats Decision statistics (MongoDB)")
+    print("    WS     /ws                      Real-time operator dashboard")
     print("="*65 + "\n")
     logger.info("[STARTUP] Smart Grid backend ready")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await db.disconnect()
+    logger.info("[SHUTDOWN] Smart Grid backend stopped")
 
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
@@ -120,7 +133,8 @@ def health():
         active_connections=manager.get_connection_count(),
         ml_samples=len(ml_model.history_y),
         ml_trained=ml_model.is_trained,
-        paused_threads=list(paused_threads)
+        paused_threads=list(paused_threads),
+        db_connected=db.is_connected
     )
 
 
@@ -147,12 +161,11 @@ async def receive_grid_state(state: GridState):
     plans = await asyncio.to_thread(optimize_power, grid_dict)
     await manager.broadcast_agent_activity("OPTIMIZER", "OR-Tools optimization completed with 3 plan candidates", "complete")
 
-    # Recommended plan based on risk (filled after AI analysis)
+    # LangGraph multi-agent pipeline
     try:
         ai_analysis = await asyncio.to_thread(run_analysis, grid_dict, thread_id)
         await manager.broadcast_agent_activity("RISK", "Multi-agent analysis complete - risk assessment ready", "complete")
     except GraphInterrupt:
-        # Graph paused at HITL interrupt — this is expected for high/critical risk
         logger.warning(f"[GRID-STATE] Graph paused at HITL | thread: {thread_id}")
         ai_analysis = {
             "risk_level": "high", "risk_reason": "Paused for human review",
@@ -198,6 +211,10 @@ async def receive_grid_state(state: GridState):
             print(f"  thread_id: {thread_id}")
             print(f"  risk_level: {ai_analysis.get('risk_level', 'low')}\n")
 
+    # Save to MongoDB — fire and forget, never blocks response
+    asyncio.create_task(db.save_grid_state(grid_dict, thread_id))
+    asyncio.create_task(db.save_analysis(thread_id, ai_analysis, plans))
+
     # Broadcast HITL alert if needed
     if requires_approval:
         await manager.broadcast_alert(
@@ -205,10 +222,10 @@ async def receive_grid_state(state: GridState):
             message=f"Human approval required — Risk: {ai_analysis.get('risk_level', 'unknown').upper()}",
             severity="critical" if ai_analysis.get("risk_level") == "critical" else "high",
             data={
-                "thread_id":            thread_id,
-                "risk_level":           ai_analysis.get("risk_level"),
-                "time_to_act_minutes":  ai_analysis.get("time_to_act_minutes"),
-                "ml_llm_disagreement":  ai_analysis.get("ml_llm_disagreement", False)
+                "thread_id":           thread_id,
+                "risk_level":          ai_analysis.get("risk_level"),
+                "time_to_act_minutes": ai_analysis.get("time_to_act_minutes"),
+                "ml_llm_disagreement": ai_analysis.get("ml_llm_disagreement", False)
             }
         )
 
@@ -254,6 +271,7 @@ async def get_status():
             "paused_threads":  list(paused_threads),
             "ml_samples":      len(ml_model.history_y),
             "ml_trained":      ml_model.is_trained,
+            "db_connected":    db.is_connected,
             "timestamp":       datetime.now().isoformat()
         }
 
@@ -275,16 +293,15 @@ def get_ml_stats():
 
 @app.get("/workflow-info")
 def workflow_info():
-    """LangGraph pipeline structure — useful for demo."""
     graph = get_graph_structure()
     return {
-        "workflow":         "Smart Grid AI Multi-Agent Pipeline",
-        "architecture":     "Parallel fan-out/fan-in with HITL interrupt",
-        "version":          "2.0.0",
-        "features":         graph.get("key_features", []),
-        "nodes":            graph.get("nodes", []),
-        "parallel_groups":  graph.get("parallel_groups", []),
-        "edges":            graph.get("edges", []),
+        "workflow":        "Smart Grid AI Multi-Agent Pipeline",
+        "architecture":    "Parallel fan-out/fan-in with HITL interrupt",
+        "version":         "2.0.0",
+        "features":        graph.get("key_features", []),
+        "nodes":           graph.get("nodes", []),
+        "parallel_groups": graph.get("parallel_groups", []),
+        "edges":           graph.get("edges", []),
         "hitl_support": {
             "enabled":    True,
             "trigger":    "risk_level in ['high', 'critical'] OR ml_llm_disagreement",
@@ -306,28 +323,24 @@ def workflow_info():
 
 @app.get("/strategies-info")
 def strategies_info():
-    """Optimizer plan descriptions — useful for dashboard help text."""
     return {
         "strategies": [
             {
-                "plan_id":     1,
-                "label":       "Minimum Disruption (Optimal)",
+                "plan_id": 1, "label": "Minimum Disruption (Optimal)",
                 "description": "Mathematically least disruptive cut — OR-Tools optimal",
-                "use_case":    "When minimizing total MW cut is the priority",
+                "use_case": "When minimizing total MW cut is the priority",
                 "recommended_for": ["low", "medium"]
             },
             {
-                "plan_id":     2,
-                "label":       "Industrial Priority Cut",
+                "plan_id": 2, "label": "Industrial Priority Cut",
                 "description": "Cuts industrial zones first — minimizes residential impact",
-                "use_case":    "Heatwaves — protect residential cooling",
+                "use_case": "Heatwaves — protect residential cooling",
                 "recommended_for": ["high", "critical"]
             },
             {
-                "plan_id":     3,
-                "label":       "Residential Rotation",
+                "plan_id": 3, "label": "Residential Rotation",
                 "description": "Distributes cuts across residential — protects industry",
-                "use_case":    "When industrial continuity is critical",
+                "use_case": "When industrial continuity is critical",
                 "recommended_for": ["medium"]
             }
         ]
@@ -337,11 +350,37 @@ def strategies_info():
 @app.get("/ws-stats")
 def websocket_stats():
     return {
-        "active_connections":    manager.get_connection_count(),
+        "active_connections":     manager.get_connection_count(),
         "broadcast_history_size": len(manager.broadcast_history),
-        "recent_messages":       manager.get_recent_history(5),
-        "paused_threads":        list(paused_threads)
+        "recent_messages":        manager.get_recent_history(5),
+        "paused_threads":         list(paused_threads)
     }
+
+
+# ── MongoDB history endpoints ──────────────────────────────────────────────────
+
+@app.get("/history/grid")
+async def grid_history(limit: int = 50):
+    """Last N grid readings from simulator."""
+    return await db.get_grid_history(limit)
+
+
+@app.get("/history/analyses")
+async def analysis_history(limit: int = 20):
+    """Last N AI pipeline results."""
+    return await db.get_recent_analyses(limit)
+
+
+@app.get("/history/decisions")
+async def decision_history(limit: int = 50):
+    """Full human decision audit log."""
+    return await db.get_decision_history(limit)
+
+
+@app.get("/history/decisions/stats")
+async def decision_stats():
+    """Aggregated stats on human decisions."""
+    return await db.get_decision_stats()
 
 
 # ── WebSocket ──────────────────────────────────────────────────────────────────
@@ -415,7 +454,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     })
                     continue
 
-                # Online learning — update ML with confirmed risk
+                # Online learning
                 try:
                     confirmed_risk = ai_copy.get("risk_level", "unknown")
                     if confirmed_risk != "unknown":
@@ -424,6 +463,19 @@ async def websocket_endpoint(websocket: WebSocket):
                         print(f"\033[35m[ML] Updated | risk: {confirmed_risk} | samples: {len(ml_model.history_y)}\033[0m")
                 except Exception as e:
                     logger.warning(f"[ML] Update failed: {e}")
+
+                # Save human decision to MongoDB
+                asyncio.create_task(db.save_human_decision(
+                    thread_id=thread_id,
+                    decision_type="approve",
+                    plan_id=plan_id,
+                    note=note,
+                    risk_level=ai_copy.get("risk_level", "unknown")
+                ))
+                asyncio.create_task(db.save_ml_update(
+                    len(ml_model.history_y),
+                    ai_copy.get("risk_level", "unknown")
+                ))
 
                 await manager.broadcast({
                     "type":          "plan_applied",
@@ -517,6 +569,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     if is_valid:
                         paused_threads.discard(thread_id)
                         grid_copy = dict(latest_grid_state)
+                        ai_copy   = dict(latest_ai_analysis)
 
                 if not is_valid:
                     await manager.send_to_client(websocket, {
@@ -538,7 +591,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     })
                     continue
 
-                # Learn from rejection if operator provides confirmed risk
+                # Learn from rejection
                 try:
                     rejected_risk = data.get("confirmed_risk")
                     if rejected_risk and rejected_risk != "unknown":
@@ -547,6 +600,16 @@ async def websocket_endpoint(websocket: WebSocket):
                         print(f"\033[35m[ML] Updated from rejection | risk: {rejected_risk}\033[0m")
                 except Exception as e:
                     logger.warning(f"[ML] Update from rejection failed: {e}")
+
+                # Save to MongoDB
+                asyncio.create_task(db.save_human_decision(
+                    thread_id=thread_id,
+                    decision_type="reject",
+                    plan_id=None,
+                    note=reason,
+                    risk_level=ai_copy.get("risk_level", "unknown"),
+                    confirmed_risk=data.get("confirmed_risk")
+                ))
 
                 await manager.broadcast({
                     "type":      "plans_rejected",
