@@ -213,13 +213,13 @@ def node_synthesize(state: GridAnalysisState) -> dict:
     llm_idx  = risk_order.get(llm_risk, 0)
     ml_idx   = risk_order.get(ml_risk, 0) if ml_risk != "unknown" else llm_idx
     gap      = abs(llm_idx - ml_idx)
-    disagree = gap >= 2   # e.g. ML says critical, LLM says low
+    disagree = gap >= 3  # e.g. ML says critical, LLM says low
 
     if disagree:
         print(f"\033[33m  ⚡ [DISAGREEMENT] ML says '{ml_risk}', LLM says '{llm_risk}' — forcing HITL\033[0m")
 
     # ── Anomaly bump ──────────────────────────────────────────────────────────
-    if ml.get("anomaly_detected") and risk_order.get(final_risk, 0) < 2:
+    if ml.get("anomaly_detected") and risk_order.get(final_risk, 0) < 1:
         print(f"\033[33m  ⚠️  Anomaly detected — escalating risk from {final_risk} to high\033[0m")
         final_risk = "high"
 
