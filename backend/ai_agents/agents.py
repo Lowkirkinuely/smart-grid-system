@@ -37,7 +37,10 @@ def _call_llm(system_prompt: str, user_content: str) -> dict:
             temperature=0.1,
             max_tokens=500
         )
-        raw = response.choices[0].message.content.strip()
+        content = response.choices[0].message.content
+        if not content:
+            raise ValueError("LLM returned empty content")
+        raw = content.strip()
 
         # Strip markdown fences if model wraps response
         if "```" in raw:
