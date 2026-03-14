@@ -54,12 +54,12 @@ SCENARIOS = [
     {
         "name": "Normal Operation",
         "description": "Grid stable. Supply comfortably exceeds demand. Expected: LOW risk.",
-        "demand": 900,   "supply": 1500, "temperature": 24.0, "zone_multiplier": 0.65,
+        "demand": 700,   "supply": 1800, "temperature": 22.0, "zone_multiplier": 0.5,
     },
     {
         "name": "Afternoon Peak",
         "description": "Warm day, AC load rising. Supply still ahead. Expected: MEDIUM risk.",
-        "demand": 1420,  "supply": 1500, "temperature": 34.0, "zone_multiplier": 1.0,
+        "demand": 1420,  "supply": 1600, "temperature": 34.0, "zone_multiplier": 1.0,
     },
     {
         "name": "Heatwave Stress",
@@ -74,7 +74,7 @@ SCENARIOS = [
     {
         "name": "Night Recovery",
         "description": "Late night. Demand falling sharply. Expected: LOW risk.",
-        "demand": 750,   "supply": 1500, "temperature": 27.0, "zone_multiplier": 0.55,
+        "demand": 600,   "supply": 1800, "temperature": 21.0, "zone_multiplier": 0.45,
     },
 ]
 
