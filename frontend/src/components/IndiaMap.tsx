@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 const REGION_MAP: Record<string, string> = {
   "andaman-and-nicobar-islands": "SR", "andhra-pradesh": "SR", "arunachal-pradesh": "NER",
@@ -79,50 +78,41 @@ export default function IndiaMap({ onStateClick }: { onStateClick: (name: string
         </div>
       )}
 
-      {/* PAN WRAPPER */}
-      <TransformWrapper
-        initialScale={1.3}
-        minScale={1.3}
-        maxScale={1.3}
-        limitToBounds={false}
-        centerZoomedOut={false}
-        panning={{ disabled: false, velocityDisabled: true }}
-      >
-        <TransformComponent wrapperClass="!w-full !h-full" contentClass="!w-full !h-full flex items-center justify-center">
-          <svg 
-            viewBox={mapData.viewBox} 
-            className="w-full h-[85vh] cursor-grab active:cursor-grabbing outline-none" 
-            style={{ filter: "drop-shadow(0 0 40px rgba(0,0,0,0.6))" }}
-          >
-            <g>
-              {mapData.locations?.map((location: any) => {
-                const region = getRegionForId(location.id);
-                const color = region?.color ?? "#334155"; // Fallback to dark if not found
-                const isHover = hoveredId === location.id;
+      {/* MAP SVG */}
+      <div className="w-full h-full flex items-center justify-center">
+        <svg 
+          viewBox={mapData.viewBox} 
+          className="w-full h-[85vh] cursor-grab active:cursor-grabbing outline-none" 
+          style={{ filter: "drop-shadow(0 0 40px rgba(0,0,0,0.6))" }}
+        >
+          <g>
+            {mapData.locations?.map((location: any) => {
+              const region = getRegionForId(location.id);
+              const color = region?.color ?? "#334155"; // Fallback to dark if not found
+              const isHover = hoveredId === location.id;
 
-                return (
-                  <path
-                    key={location.id}
-                    id={location.id}
-                    d={location.path}
-                    className="transition-all duration-300 cursor-pointer outline-none"
-                    style={{
-                      fill: color,
-                      fillOpacity: isHover ? 0.7 : 0.3,
-                      stroke: isHover ? "#ffffff" : "#475569",
-                      strokeWidth: isHover ? 2 : 1,
-                      filter: isHover ? `drop-shadow(0 0 15px ${color})` : "none",
-                    }}
-                    onMouseEnter={() => setHoveredId(location.id)}
-                    onMouseLeave={() => setHoveredId(null)}
-                    onClick={() => onStateClick(location.name)}
-                  />
-                );
-              })}
-            </g>
-          </svg>
-        </TransformComponent>
-      </TransformWrapper>
+              return (
+                <path
+                  key={location.id}
+                  id={location.id}
+                  d={location.path}
+                  className="transition-all duration-300 cursor-pointer outline-none"
+                  style={{
+                    fill: color,
+                    fillOpacity: isHover ? 0.7 : 0.3,
+                    stroke: isHover ? "#ffffff" : "#475569",
+                    strokeWidth: isHover ? 2 : 1,
+                    filter: isHover ? `drop-shadow(0 0 15px ${color})` : "none",
+                  }}
+                  onMouseEnter={() => setHoveredId(location.id)}
+                  onMouseLeave={() => setHoveredId(null)}
+                  onClick={() => onStateClick(location.name)}
+                />
+              );
+            })}
+          </g>
+        </svg>
+      </div>
 
       {/* REGIONAL STATUS BAR */}
       <div className="absolute bottom-40 left-[28rem] flex flex-row flex-wrap gap-4 pointer-events-auto z-20 pr-10">
