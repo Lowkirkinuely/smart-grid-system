@@ -10,89 +10,132 @@ from .agents import (
 
 load_dotenv()
 
-# ── State ──────────────────────────────────────────────────────────────────────
 
 class GridAnalysisState(TypedDict):
-    grid_data: dict
-    intake: Optional[dict]
-    # Written by 3 parallel nodes
-    grid_health: Optional[dict]
-    demand_analysis: Optional[dict]
-    disaster_risk: Optional[dict]
-    # Written after parallel join
-    priority_status: Optional[dict]
-    final_analysis: Optional[dict]
-    # HITL
+    grid_data:           dict
+    intake:              Optional[dict]
+    grid_health:         Optional[dict]
+    demand_analysis:     Optional[dict]
+    disaster_risk:       Optional[dict]
+    priority_status:     Optional[dict]
+    final_analysis:      Optional[dict]
     requires_human_approval: bool
-    human_decision: Optional[dict]
+    human_decision:      Optional[dict]
+    agent_errors:        Optional[dict]   # ← tracks per-agent failures
 
-# ── Node functions ─────────────────────────────────────────────────────────────
+
+def _safe_run(agent_fn, *args, agent_name: str, state: dict) -> tuple[dict | None, str | None]:
+    """Runs an agent function, returns (result, error_msg). Never raises."""
+    try:
+        return agent_fn(*args), None
+    except TimeoutError:
+        msg = f"{agent_name} timed out after 15s"
+        print(f"\033[91m  ✗ [{agent_name}] TIMEOUT\033[0m")
+        return None, msg
+    except ValueError as e:
+        msg = f"{agent_name} returned invalid JSON: {e}"
+        print(f"\033[91m  ✗ [{agent_name}] JSON ERROR: {e}\033[0m")
+        return None, msg
+    except Exception as e:
+        msg = f"{agent_name} unexpected error: {e}"
+        print(f"\033[91m  ✗ [{agent_name}] ERROR: {e}\033[0m")
+        return None, msg
+
 
 def node_intake(state: GridAnalysisState) -> dict:
     print("\n\033[94m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m")
     print("\033[94m  🔵 [INTAKE AGENT] Preprocessing grid data...\033[0m")
-    result = intake_agent(state["grid_data"])
+    result = intake_agent(state["grid_data"])   # pure Python, never fails
     print(f"\033[94m  ✓ Deficit: {result['deficit_mw']}MW | Overloaded: {result['is_overloaded']} | Heatwave: {result['heatwave_active']}\033[0m")
-    return {"intake": result}
+    return {"intake": result, "agent_errors": {}}
 
 
 def node_grid_health(state: GridAnalysisState) -> dict:
     print("\033[93m  ⚡ [GRID HEALTH AGENT] Analyzing stability & fault risk...\033[0m")
-    result = grid_health_agent(state["grid_data"], state["intake"])
-    print(f"\033[93m  ✓ Fault Risk: {result.get('fault_risk')} | Stability Score: {result.get('stability_score')}/100 | Cascading: {result.get('cascading_failure_risk')}\033[0m")
-    return {"grid_health": result}
+    result, err = _safe_run(
+        grid_health_agent, state["grid_data"], state["intake"],
+        agent_name="GridHealthAgent", state=state
+    )
+    if result:
+        print(f"\033[93m  ✓ Fault Risk: {result.get('fault_risk')} | Stability: {result.get('stability_score')}/100 | Cascading: {result.get('cascading_failure_risk')}\033[0m")
+    errors = {**(state.get("agent_errors") or {})}
+    if err:
+        errors["grid_health"] = err
+    return {"grid_health": result or _grid_health_fallback(), "agent_errors": errors}
 
 
 def node_demand(state: GridAnalysisState) -> dict:
     print("\033[92m  📈 [DEMAND AGENT] Forecasting consumption trends...\033[0m")
-    result = demand_agent(state["grid_data"], state["intake"])
-    print(f"\033[92m  ✓ Trend: {result.get('demand_trend')} | Spike: {result.get('spike_detected')} | Severity: {result.get('spike_severity')}\033[0m")
-    return {"demand_analysis": result}
+    result, err = _safe_run(
+        demand_agent, state["grid_data"], state["intake"],
+        agent_name="DemandAgent", state=state
+    )
+    if result:
+        print(f"\033[92m  ✓ Trend: {result.get('demand_trend')} | Spike: {result.get('spike_detected')} | Severity: {result.get('spike_severity')}\033[0m")
+    errors = {**(state.get("agent_errors") or {})}
+    if err:
+        errors["demand"] = err
+    return {"demand_analysis": result or _demand_fallback(), "agent_errors": errors}
 
 
 def node_disaster(state: GridAnalysisState) -> dict:
     print("\033[91m  🌩️  [DISASTER AGENT] Evaluating environmental risks...\033[0m")
-    result = disaster_agent(state["grid_data"], state["intake"])
-    print(f"\033[91m  ✓ Disaster Risk: {result.get('disaster_risk')} | Time to Act: {result.get('time_to_act_minutes')}min\033[0m")
-    return {"disaster_risk": result}
+    result, err = _safe_run(
+        disaster_agent, state["grid_data"], state["intake"],
+        agent_name="DisasterAgent", state=state
+    )
+    if result:
+        print(f"\033[91m  ✓ Disaster Risk: {result.get('disaster_risk')} | Time to Act: {result.get('time_to_act_minutes')}min\033[0m")
+    errors = {**(state.get("agent_errors") or {})}
+    if err:
+        errors["disaster"] = err
+    return {"disaster_risk": result or _disaster_fallback(), "agent_errors": errors}
 
 
 def node_priority(state: GridAnalysisState) -> dict:
     print("\033[95m  🏥 [PRIORITY AGENT] Determining zone protection hierarchy...\033[0m")
-    result = priority_agent(
+    result, err = _safe_run(
+        priority_agent,
         state["grid_data"],
-        state.get("grid_health") or {},
-        state.get("demand_analysis") or {},
-        state.get("disaster_risk") or {}
+        state.get("grid_health") or _grid_health_fallback(),
+        state.get("demand_analysis") or _demand_fallback(),
+        state.get("disaster_risk") or _disaster_fallback(),
+        agent_name="PriorityAgent", state=state
     )
-    print(f"\033[95m  ✓ Safe to Cut: {result.get('safe_to_cut_zones')} | Relief: {result.get('estimated_relief_mw')}MW\033[0m")
-    return {"priority_status": result}
+    if result:
+        print(f"\033[95m  ✓ Safe to Cut: {result.get('safe_to_cut_zones')} | Relief: {result.get('estimated_relief_mw')}MW\033[0m")
+    errors = {**(state.get("agent_errors") or {})}
+    if err:
+        errors["priority"] = err
+    return {"priority_status": result or _priority_fallback(), "agent_errors": errors}
 
 
 def node_synthesize(state: GridAnalysisState) -> dict:
     print("\033[96m  🧠 [SYNTHESIZER] Aggregating all agent outputs...\033[0m")
 
-    gh = state.get("grid_health") or {}
-    da = state.get("demand_analysis") or {}
-    dr = state.get("disaster_risk") or {}
-    ps = state.get("priority_status") or {}
-    intake = state.get("intake") or {}
+    gh     = state.get("grid_health")     or _grid_health_fallback()
+    da     = state.get("demand_analysis") or _demand_fallback()
+    dr     = state.get("disaster_risk")   or _disaster_fallback()
+    ps     = state.get("priority_status") or _priority_fallback()
+    intake = state.get("intake")          or {}
+    errors = state.get("agent_errors")    or {}
 
     risk_order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
-    risks = [gh.get("fault_risk", "low"), dr.get("disaster_risk", "low")]
-    overall_risk = max(risks, key=lambda r: risk_order.get(r, 0))
+    risks      = [gh.get("fault_risk", "low"), dr.get("disaster_risk", "low")]
+    overall    = max(risks, key=lambda r: risk_order.get(r, 0))
 
-    # Escalate to critical if cascading failure is imminent
-    if gh.get("cascading_failure_risk") and overall_risk == "high":
-        overall_risk = "critical"
+    if gh.get("cascading_failure_risk") and overall == "high":
+        overall = "critical"
 
-    confidences = [
-        gh.get("confidence", 0.7),
-        da.get("confidence", 0.7),
-        dr.get("confidence", 0.7),
-        ps.get("confidence", 0.7)
+    # Degrade confidence if any agent failed
+    raw_confidences = [
+        gh.get("confidence", 0.5),
+        da.get("confidence", 0.5),
+        dr.get("confidence", 0.5),
+        ps.get("confidence", 0.5)
     ]
-    avg_confidence = round(sum(confidences) / len(confidences), 2)
+    penalty     = len(errors) * 0.1
+    avg_conf    = round(max(0.0, sum(raw_confidences) / len(raw_confidences) - penalty), 2)
 
     recommendations = []
     if gh.get("overload"):
@@ -103,65 +146,61 @@ def node_synthesize(state: GridAnalysisState) -> dict:
         recommendations.append(f"🌩️  {dr['recommended_action']}")
     if ps.get("protection_strategy"):
         recommendations.append(f"🏥 {ps['protection_strategy']}")
+    if errors:
+        recommendations.append(f"⚠️  {len(errors)} agent(s) degraded — confidence reduced")
     if not recommendations:
-        recommendations.append("✅ Grid is stable — no immediate action needed")
+        recommendations.append("✅ Grid stable — no immediate action needed")
 
-    requires_approval = overall_risk in ["high", "critical"]
+    requires_approval = overall in ["high", "critical"]
 
     final = {
-        "risk_level": overall_risk,
-        "risk_reason": gh.get("analysis", "No analysis available"),
-        "recommendations": recommendations,
-        "demand_trend": da.get("demand_trend", "stable"),
-        "spike_detected": da.get("spike_detected", False),
-        "spike_severity": da.get("spike_severity", "none"),
-        "disaster_risk": dr.get("disaster_risk", "low"),
-        "risk_factors": dr.get("risk_factors", []),
-        "protected_zones_safe": ps.get("protected_zones_safe", True),
-        "critical_zones": ps.get("critical_zones", []),
-        "safe_to_cut_zones": ps.get("safe_to_cut_zones", []),
-        "load_percentage": gh.get("load_percentage", 0),
-        "stability_score": gh.get("stability_score", 100),
-        "cascading_failure_risk": gh.get("cascading_failure_risk", False),
-        "time_to_act_minutes": dr.get("time_to_act_minutes", 60),
-        "avg_confidence": avg_confidence,
+        "risk_level":              overall,
+        "risk_reason":             gh.get("analysis", "Insufficient data"),
+        "recommendations":         recommendations,
+        "demand_trend":            da.get("demand_trend", "unknown"),
+        "spike_detected":          da.get("spike_detected", False),
+        "spike_severity":          da.get("spike_severity", "none"),
+        "disaster_risk":           dr.get("disaster_risk", "low"),
+        "risk_factors":            dr.get("risk_factors", []),
+        "protected_zones_safe":    ps.get("protected_zones_safe", True),
+        "critical_zones":          ps.get("critical_zones", []),
+        "safe_to_cut_zones":       ps.get("safe_to_cut_zones", []),
+        "load_percentage":         gh.get("load_percentage", 0),
+        "stability_score":         gh.get("stability_score", 100),
+        "cascading_failure_risk":  gh.get("cascading_failure_risk", False),
+        "time_to_act_minutes":     dr.get("time_to_act_minutes", 60),
+        "avg_confidence":          avg_conf,
         "requires_human_approval": requires_approval,
-        "deficit_mw": intake.get("deficit_mw", 0)
+        "deficit_mw":              intake.get("deficit_mw", 0),
+        "agent_errors":            errors
     }
 
-    risk_colors = {
-        "low": "\033[92m", "medium": "\033[93m",
-        "high": "\033[91m", "critical": "\033[31m"
-    }
-    color = risk_colors.get(overall_risk, "\033[0m")
-    print(f"\033[96m  ✓ Overall Risk: {color}{overall_risk.upper()}\033[96m | Confidence: {avg_confidence} | Requires HITL: {requires_approval}\033[0m")
+    color = {"low": "\033[92m", "medium": "\033[93m", "high": "\033[91m", "critical": "\033[31m"}.get(overall, "\033[0m")
+    print(f"\033[96m  ✓ Risk: {color}{overall.upper()}\033[96m | Confidence: {avg_conf} | HITL: {requires_approval}")
+    if errors:
+        print(f"\033[93m  ⚠ Degraded agents: {list(errors.keys())}\033[0m")
     print("\033[94m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m\n")
 
     return {"final_analysis": final, "requires_human_approval": requires_approval}
 
 
 def node_human_review(state: GridAnalysisState) -> dict:
-    """
-    TRUE LangGraph HITL — graph execution pauses here.
-    Operator must send a decision via WebSocket to resume.
-    """
     fa = state["final_analysis"]
     print(f"\n\033[31m{'━'*50}\033[0m")
-    print(f"\033[31m  🚨 [HITL] PAUSING GRAPH — HUMAN APPROVAL REQUIRED\033[0m")
-    print(f"\033[31m  Risk Level : {fa['risk_level'].upper()}\033[0m")
+    print(f"\033[31m  🚨 [HITL] PAUSING — HUMAN APPROVAL REQUIRED\033[0m")
+    print(f"\033[31m  Risk       : {fa['risk_level'].upper()}\033[0m")
     print(f"\033[31m  Reason     : {fa['risk_reason']}\033[0m")
     print(f"\033[31m  Time to Act: {fa.get('time_to_act_minutes')} minutes\033[0m")
     print(f"\033[31m{'━'*50}\033[0m\n")
 
-    # This line PAUSES the graph — execution stops here until resumed
     human_decision = interrupt({
-        "message": "⚠️ HIGH RISK — Human approval required before executing any plan.",
-        "risk_level": fa["risk_level"],
-        "risk_reason": fa["risk_reason"],
+        "message":                "⚠️ HIGH RISK — Human approval required.",
+        "risk_level":             fa["risk_level"],
+        "risk_reason":            fa["risk_reason"],
         "cascading_failure_risk": fa.get("cascading_failure_risk"),
-        "time_to_act_minutes": fa.get("time_to_act_minutes"),
-        "recommendations": fa["recommendations"],
-        "safe_to_cut_zones": fa.get("safe_to_cut_zones", []),
+        "time_to_act_minutes":    fa.get("time_to_act_minutes"),
+        "recommendations":        fa["recommendations"],
+        "safe_to_cut_zones":      fa.get("safe_to_cut_zones", []),
     })
 
     print(f"\033[92m  ✅ [HITL] Operator responded: {human_decision}\033[0m\n")
@@ -173,11 +212,31 @@ def node_auto_approve(state: GridAnalysisState) -> dict:
     return {"human_decision": {"decision": "auto_approved"}}
 
 
-# ── Conditional routing ────────────────────────────────────────────────────────
-
 def route_after_synthesize(state: GridAnalysisState) -> str:
-    risk = state["final_analysis"]["risk_level"]
-    return "human_review" if risk in ["high", "critical"] else "auto_approve"
+    return "human_review" if state["final_analysis"]["risk_level"] in ["high", "critical"] else "auto_approve"
+
+
+# ── Fallback dicts — used when an agent times out ─────────────────────────────
+
+def _grid_health_fallback() -> dict:
+    return {"overload": True, "load_percentage": 0, "fault_risk": "medium",
+            "cascading_failure_risk": False, "stability_score": 50,
+            "analysis": "Grid health agent unavailable", "confidence": 0.3}
+
+def _demand_fallback() -> dict:
+    return {"demand_trend": "unknown", "spike_detected": False, "spike_severity": "none",
+            "temperature_impact_mw": 0, "forecast_next_hour": "unavailable",
+            "recommended_reserve_mw": 0, "confidence": 0.3}
+
+def _disaster_fallback() -> dict:
+    return {"disaster_risk": "medium", "risk_factors": ["data unavailable"],
+            "infrastructure_threat": False, "recommended_action": "Manual assessment required",
+            "time_to_act_minutes": 30, "confidence": 0.3}
+
+def _priority_fallback() -> dict:
+    return {"protected_zones_safe": True, "critical_zones": [], "at_risk_zones": [],
+            "safe_to_cut_zones": [], "protection_strategy": "Priority agent unavailable",
+            "estimated_relief_mw": 0, "confidence": 0.3}
 
 
 # ── Build graph ────────────────────────────────────────────────────────────────
@@ -187,39 +246,33 @@ memory = MemorySaver()
 def build_graph():
     workflow = StateGraph(GridAnalysisState)
 
-    # Register nodes
-    workflow.add_node("intake",          node_intake)
-    workflow.add_node("grid_health",     node_grid_health)
-    workflow.add_node("demand_agent",    node_demand)
-    workflow.add_node("disaster_agent",  node_disaster)
-    workflow.add_node("priority_agent",  node_priority)
-    workflow.add_node("synthesize",      node_synthesize)
-    workflow.add_node("human_review",    node_human_review)
-    workflow.add_node("auto_approve",    node_auto_approve)
+    workflow.add_node("intake",         node_intake)
+    workflow.add_node("grid_health",    node_grid_health)
+    workflow.add_node("demand_agent",   node_demand)
+    workflow.add_node("disaster_agent", node_disaster)
+    workflow.add_node("priority_agent", node_priority)
+    workflow.add_node("synthesize",     node_synthesize)
+    workflow.add_node("human_review",   node_human_review)
+    workflow.add_node("auto_approve",   node_auto_approve)
 
     workflow.set_entry_point("intake")
 
-    # intake → 3 PARALLEL agents (fan-out)
+    # fan-out: intake → 3 parallel agents
     workflow.add_edge("intake",         "grid_health")
     workflow.add_edge("intake",         "demand_agent")
     workflow.add_edge("intake",         "disaster_agent")
 
-    # 3 parallel agents → priority_agent (fan-in / join)
+    # fan-in: all 3 → priority
     workflow.add_edge("grid_health",    "priority_agent")
     workflow.add_edge("demand_agent",   "priority_agent")
     workflow.add_edge("disaster_agent", "priority_agent")
 
-    # priority → synthesize
     workflow.add_edge("priority_agent", "synthesize")
 
-    # synthesize → conditional: HITL or auto
     workflow.add_conditional_edges(
         "synthesize",
         route_after_synthesize,
-        {
-            "human_review": "human_review",
-            "auto_approve": "auto_approve"
-        }
+        {"human_review": "human_review", "auto_approve": "auto_approve"}
     )
 
     workflow.add_edge("human_review", END)
@@ -232,32 +285,19 @@ graph = build_graph()
 
 
 def run_analysis(grid_data: dict, thread_id: str) -> dict:
-    """
-    Runs the agent pipeline.
-    For high/critical risk: graph pauses at interrupt() waiting for human.
-    For low/medium risk: graph completes automatically.
-    """
     config = {"configurable": {"thread_id": thread_id}}
-    initial_state: GridAnalysisState = {
-        "grid_data": grid_data,
-        "intake": None,
-        "grid_health": None,
-        "demand_analysis": None,
-        "disaster_risk": None,
-        "priority_status": None,
-        "final_analysis": None,
-        "requires_human_approval": False,
-        "human_decision": None
+    initial: GridAnalysisState = {
+        "grid_data": grid_data, "intake": None,
+        "grid_health": None, "demand_analysis": None,
+        "disaster_risk": None, "priority_status": None,
+        "final_analysis": None, "requires_human_approval": False,
+        "human_decision": None, "agent_errors": {}
     }
-    result = graph.invoke(initial_state, config=config)
+    result = graph.invoke(initial, config=config)
     return result.get("final_analysis", {})
 
 
 def resume_with_human_decision(thread_id: str, decision: dict) -> dict:
-    """
-    Resumes a paused LangGraph thread after the human operator makes a decision.
-    Called from the WebSocket handler when operator sends apply_plan or reject_plans.
-    """
     config = {"configurable": {"thread_id": thread_id}}
     result = graph.invoke(Command(resume=decision), config=config)
     return result.get("final_analysis", {})

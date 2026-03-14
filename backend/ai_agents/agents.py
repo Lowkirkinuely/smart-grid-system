@@ -1,51 +1,65 @@
 import os
 import json
+import httpx
 from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+# httpx client with hard timeout — Groq hangs without this
+_http_client = httpx.Client(timeout=httpx.Timeout(15.0, connect=5.0))
+client = Groq(api_key=os.getenv("GROQ_API_KEY"), http_client=_http_client)
+
 
 def _call_llm(system_prompt: str, user_content: str) -> dict:
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content}
-        ],
-        temperature=0.1,
-        max_tokens=500
-    )
-    raw = response.choices[0].message.content.strip()
-    if "```" in raw:
-        parts = raw.split("```")
-        for part in parts:
-            if part.startswith("json"):
-                raw = part[4:].strip()
-                break
-            elif "{" in part:
-                raw = part.strip()
-                break
-    return json.loads(raw.strip())
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_content}
+            ],
+            temperature=0.1,
+            max_tokens=500
+        )
+        raw = response.choices[0].message.content.strip()
+
+        # Strip markdown fences if model adds them
+        if "```" in raw:
+            parts = raw.split("```")
+            for part in parts:
+                part = part.strip()
+                if part.startswith("json"):
+                    raw = part[4:].strip()
+                    break
+                elif part.startswith("{"):
+                    raw = part.strip()
+                    break
+
+        return json.loads(raw.strip())
+
+    except httpx.TimeoutException:
+        raise TimeoutError(f"Groq API timed out after 15s")
+    except json.JSONDecodeError as e:
+        raise ValueError(f"LLM returned invalid JSON: {e} | Raw: {raw[:200]}")
 
 
 def intake_agent(grid_data: dict) -> dict:
-    """Preprocesses and validates raw grid data — no LLM needed."""
-    deficit = grid_data["demand"] - grid_data["supply"]
+    deficit    = grid_data["demand"] - grid_data["supply"]
     load_ratio = grid_data["demand"] / grid_data["supply"] if grid_data["supply"] > 0 else 999
     return {
-        "deficit_mw": round(deficit, 2),
-        "load_ratio": round(load_ratio, 3),
-        "is_overloaded": deficit > 0,
+        "deficit_mw":      round(deficit, 2),
+        "load_ratio":      round(load_ratio, 3),
+        "is_overloaded":   deficit > 0,
         "heatwave_active": grid_data["temperature"] > 40,
         "protected_count": len([z for z in grid_data["zones"] if z.get("protected")]),
-        "total_zones": len(grid_data["zones"]),
-        "validated": True
+        "total_zones":     len(grid_data["zones"]),
+        "validated":       True
     }
 
 
 def grid_health_agent(grid_data: dict, intake: dict) -> dict:
-    system = """You are a power grid stability engineer specializing in fault analysis and cascading failure prevention.
+    system = """You are a power grid stability engineer specializing in fault analysis.
 Respond ONLY in valid JSON, no markdown, no extra text:
 {
     "overload": true or false,
@@ -68,7 +82,7 @@ Respond ONLY in valid JSON, no markdown, no extra text:
 
 
 def demand_agent(grid_data: dict, intake: dict) -> dict:
-    system = """You are a power demand forecasting specialist with expertise in heatwave-driven consumption spikes.
+    system = """You are a power demand forecasting specialist.
 Respond ONLY in valid JSON, no markdown, no extra text:
 {
     "demand_trend": "rising" or "stable" or "falling",
@@ -90,7 +104,7 @@ Respond ONLY in valid JSON, no markdown, no extra text:
 
 
 def disaster_agent(grid_data: dict, intake: dict) -> dict:
-    system = """You are a disaster risk analyst for critical power infrastructure covering heatwaves, storms, and cascading failures.
+    system = """You are a disaster risk analyst for critical power infrastructure.
 Respond ONLY in valid JSON, no markdown, no extra text:
 {
     "disaster_risk": "low" or "medium" or "high" or "critical",
@@ -104,14 +118,13 @@ Respond ONLY in valid JSON, no markdown, no extra text:
         f"Temperature: {grid_data['temperature']}C, "
         f"Heatwave: {intake['heatwave_active']}, "
         f"Grid overloaded: {intake['is_overloaded']}, "
-        f"Deficit: {intake['deficit_mw']}MW. "
-        f"High temps stress transformers and increase wildfire/equipment failure risk."
+        f"Deficit: {intake['deficit_mw']}MW."
     )
     return _call_llm(system, user)
 
 
 def priority_agent(grid_data: dict, grid_health: dict, demand: dict, disaster: dict) -> dict:
-    system = """You are a critical infrastructure protection coordinator determining zone shutdown priority.
+    system = """You are a critical infrastructure protection coordinator.
 Respond ONLY in valid JSON, no markdown, no extra text:
 {
     "protected_zones_safe": true or false,
@@ -122,7 +135,7 @@ Respond ONLY in valid JSON, no markdown, no extra text:
     "estimated_relief_mw": number,
     "confidence": number 0.0-1.0
 }"""
-    protected = [z for z in grid_data["zones"] if z.get("protected")]
+    protected     = [z for z in grid_data["zones"] if z.get("protected")]
     non_protected = [z for z in grid_data["zones"] if not z.get("protected")]
     user = (
         f"Protected (MUST stay on): {json.dumps(protected)}, "
