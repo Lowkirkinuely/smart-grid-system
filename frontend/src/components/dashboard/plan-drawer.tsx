@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { Sparkles, Shield, DollarSign, Play, ChevronUp, ChevronDown, Check, AlertCircle, Info, X } from "lucide-react";
 import { useGrid } from "../../lib/context";
 
@@ -72,101 +73,113 @@ function PlanDetailsModal({ plan, isOpen, onClose }: { plan: any; isOpen: boolea
   const cuts = plan.cuts || [];
   const totalCut = cuts.reduce((sum: number, cut: any) => sum + (cut.power_mw || 0), 0);
 
-  return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-[#16191f] rounded-[2.5rem] border-2 border-white/10 p-8 max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-white/5 border border-white/10">
-              <Sparkles className="h-6 w-6 text-purple-400" />
+  const modal = (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
+      {/* Modal Container - Smaller and contained */}
+      <div className="bg-[#16191f] rounded-[2rem] border-2 border-white/10 shadow-2xl flex flex-col w-full max-w-md max-h-[75vh]">
+        
+        {/* Fixed Header with Close Button */}
+        <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-white/10 shrink-0">
+          <div className="flex items-start gap-3 flex-1">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-white/5 border border-white/10 mt-1">
+              <Sparkles className="h-5 w-5 text-purple-400" />
             </div>
-            <div>
-              <h3 className="text-2xl font-black text-white">{plan.label || plan.name}</h3>
-              <p className="text-sm text-white/50 mt-1">{plan.description || "Strategy details"}</p>
+            <div className="min-w-0">
+              <h3 className="text-lg font-black text-white leading-tight truncate">{plan.label || plan.name}</h3>
+              <p className="text-xs text-white/50 mt-0.5 line-clamp-2">{plan.description || "Strategy details"}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg">
-            <X className="w-6 h-6 text-white" />
+          <button 
+            onClick={onClose} 
+            className="p-1.5 hover:bg-white/10 rounded-lg transition-colors shrink-0 mt-1"
+            aria-label="Close modal"
+          >
+            <X className="w-5 h-5 text-white/70 hover:text-white" />
           </button>
         </div>
 
-        {/* Key Metrics */}
-        <div className="grid grid-cols-3 gap-4 mb-6 pb-6 border-b border-white/10">
-          <div className="text-center">
-            <div className="text-2xl font-bold text-purple-400">{plan.confidence || 75}%</div>
-            <div className="text-xs text-white/50 uppercase tracking-widest mt-1">Confidence</div>
+        {/* Scrollable Content */}
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
+          
+          {/* Key Metrics - Compact */}
+          <div className="grid grid-cols-3 gap-3 bg-white/5 rounded-lg p-3 border border-white/10">
+            <div className="text-center">
+              <div className="text-xl font-bold text-purple-400">{plan.confidence || 75}%</div>
+              <div className="text-[9px] text-white/50 uppercase tracking-widest mt-0.5">Confidence</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-bold text-emerald-400">{plan.estimated_loss_mw || plan.power_saved || 0} MW</div>
+              <div className="text-[9px] text-white/50 uppercase tracking-widest mt-0.5">Saved</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-bold text-orange-400">{plan.harm_score || 5}/10</div>
+              <div className="text-[9px] text-white/50 uppercase tracking-widest mt-0.5">Harm</div>
+            </div>
           </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-emerald-400">{plan.estimated_loss_mw || plan.power_saved || 0} MW</div>
-            <div className="text-xs text-white/50 uppercase tracking-widest mt-1">Power Saved</div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-bold text-orange-400">{plan.harm_score || 5}/10</div>
-            <div className="text-xs text-white/50 uppercase tracking-widest mt-1">Harm Score</div>
-          </div>
-        </div>
 
-        {/* Load Cuts Breakdown */}
-        <div className="mb-6">
-          <h4 className="text-lg font-bold text-white mb-4 uppercase tracking-tight">Load Cuts Breakdown</h4>
+          {/* Load Cuts Breakdown */}
           {cuts.length > 0 ? (
-            <div className="space-y-3">
-              {cuts.map((cut: any, idx: number) => (
-                <div key={idx} className="bg-white/5 rounded-lg p-4 border border-white/10">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-white">{cut.zone || `Zone ${idx + 1}`}</span>
-                    <span className="text-lg font-bold text-emerald-400">{cut.power_mw || 0} MW</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400"
-                        style={{ width: `${(cut.power_mw / totalCut) * 100}%` }}
-                      />
+            <div>
+              <h4 className="text-sm font-bold text-white uppercase tracking-tight mb-2">Cuts</h4>
+              <div className="space-y-2">
+                {cuts.map((cut: any, idx: number) => (
+                  <div key={idx} className="bg-white/5 rounded-lg p-3 border border-white/10">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-sm font-bold text-white truncate">{cut.zone || `Zone ${idx + 1}`}</span>
+                      <span className="text-sm font-bold text-emerald-400 ml-2">{cut.power_mw || 0} MW</span>
                     </div>
-                    <span className="text-xs text-white/50">
-                      {totalCut > 0 ? ((cut.power_mw / totalCut) * 100).toFixed(0) : 0}%
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400"
+                          style={{ width: `${(cut.power_mw / totalCut) * 100}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-white/50 w-8 text-right">
+                        {totalCut > 0 ? ((cut.power_mw / totalCut) * 100).toFixed(0) : 0}%
+                      </span>
+                    </div>
                   </div>
-                  {cut.sector && <p className="text-xs text-white/40 mt-2">Sector: {cut.sector}</p>}
-                </div>
-              ))}
-              <div className="mt-4 pt-4 border-t border-white/10">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-white">Total Load Cut</span>
-                  <span className="text-xl font-bold text-emerald-400">{totalCut.toFixed(1)} MW</span>
+                ))}
+                <div className="mt-2 pt-2 border-t border-white/10">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold text-white">Total</span>
+                    <span className="text-lg font-bold text-emerald-400">{totalCut.toFixed(1)} MW</span>
+                  </div>
                 </div>
               </div>
             </div>
           ) : (
-            <p className="text-white/50">No load cuts specified</p>
+            <p className="text-white/50 text-sm">No load cuts specified</p>
+          )}
+
+          {/* Strategy Info */}
+          {plan.use_case && (
+            <div>
+              <h4 className="text-xs font-bold text-white/60 uppercase tracking-widest mb-1">Use Case</h4>
+              <p className="text-sm text-white/80">{plan.use_case}</p>
+          </div>
+        )}
+
+          {/* Recommended For */}
+          {plan.recommended_for && (
+            <div>
+              <h4 className="text-xs font-bold text-white/60 uppercase tracking-widest mb-1.5">Risk Levels</h4>
+              <div className="flex flex-wrap gap-1.5">
+                {(Array.isArray(plan.recommended_for) ? plan.recommended_for : []).map((level: string) => (
+                  <span key={level} className="px-2 py-1 bg-purple-500/20 border border-purple-500/50 rounded-full text-xs font-bold text-purple-300 uppercase">
+                    {level}
+                  </span>
+                ))}
+              </div>
+            </div>
           )}
         </div>
-
-        {/* Strategy Info */}
-        {plan.use_case && (
-          <div className="mb-6 pb-6 border-b border-white/10">
-            <h4 className="text-sm font-bold text-white/70 uppercase tracking-widest mb-2">Use Case</h4>
-            <p className="text-white">{plan.use_case}</p>
-          </div>
-        )}
-
-        {/* Recommended For */}
-        {plan.recommended_for && (
-          <div>
-            <h4 className="text-sm font-bold text-white/70 uppercase tracking-widest mb-2">Recommended For Risk Level</h4>
-            <div className="flex flex-wrap gap-2">
-              {(Array.isArray(plan.recommended_for) ? plan.recommended_for : []).map((level: string) => (
-                <span key={level} className="px-3 py-1 bg-purple-500/20 border border-purple-500/50 rounded-full text-xs font-bold text-purple-300 uppercase">
-                  {level}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }
 
 // --- MAIN COMPONENT ---

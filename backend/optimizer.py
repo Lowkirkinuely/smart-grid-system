@@ -65,6 +65,11 @@ class GridOptimizer:
         logger.info(f"[OPTIMIZER] Total cuttable capacity: {total_cuttable}MW (deficit: {deficit}MW)")
 
         plans = []
+        
+        # Build zone maps for harm calculation
+        zone_map = {z["name"]: z for z in zones}
+        residential_zones = {z["name"] for z in cuttable if z.get("type") == "residential" or "residential" in z["name"].lower()}
+        industrial_zones = {z["name"] for z in cuttable if z.get("type") == "industrial" or "industry" in z["name"].lower() or "industrial" in z["name"].lower()}
 
         # Plan 1 — Pure minimum disruption (no zone preference)
         p1 = self._solve(
@@ -75,32 +80,45 @@ class GridOptimizer:
             note="Mathematically least disruptive cut — OR-Tools optimal"
         )
         if p1:
+            p1["confidence"] = self._calculate_confidence(p1, deficit, "balanced")
+            p1["harm_score"] = self._calculate_harm(p1["cuts"], zone_map, residential_zones, industrial_zones, "balanced")
+            p1["description"] = "Purely optimized solution with no zone preferences. Cuts zones mathematically to minimize total disruption."
+            p1["use_case"] = "General load shedding when no strategic priorities exist"
+            p1["recommended_for"] = ["routine", "balanced"]
             plans.append(p1)
 
         # Plan 2 — Industrial first, residential only if industrial isn't enough
-        industrial = {z["name"] for z in cuttable if z.get("type") == "industrial" or "industry" in z["name"].lower() or "industrial" in z["name"].lower()}
-        print(f"\n[OPTIMIZER] Plan 2 will prioritize INDUSTRIAL zones: {industrial}")
+        print(f"\n[OPTIMIZER] Plan 2 will prioritize INDUSTRIAL zones: {industrial_zones}")
         p2 = self._solve(
             cuttable, deficit,
-            priority_names=industrial,
+            priority_names=industrial_zones,
             label="Industrial Priority Cut",
             plan_id=2,
             note="Cuts industrial zones first — minimizes residential impact"
         )
         if p2:
+            p2["confidence"] = self._calculate_confidence(p2, deficit, "industrial_first")
+            p2["harm_score"] = self._calculate_harm(p2["cuts"], zone_map, residential_zones, industrial_zones, "industrial_first")
+            p2["description"] = "Protects residential areas by prioritizing industrial zone cuts. Best for protecting household services."
+            p2["use_case"] = "Critical shortage requiring minimal residential impact"
+            p2["recommended_for"] = ["high", "critical", "residential_protection"]
             plans.append(p2)
 
         # Plan 3 — Residential first, industrial only if residential isn't enough
-        residential = {z["name"] for z in cuttable if z.get("type") == "residential" or "residential" in z["name"].lower()}
-        print(f"\n[OPTIMIZER] Plan 3 will prioritize RESIDENTIAL zones: {residential}")
+        print(f"\n[OPTIMIZER] Plan 3 will prioritize RESIDENTIAL zones: {residential_zones}")
         p3 = self._solve(
             cuttable, deficit,
-            priority_names=residential,
+            priority_names=residential_zones,
             label="Residential Rotation",
             plan_id=3,
             note="Distributes cuts across residential — protects industry"
         )
         if p3:
+            p3["confidence"] = self._calculate_confidence(p3, deficit, "residential_first")
+            p3["harm_score"] = self._calculate_harm(p3["cuts"], zone_map, residential_zones, industrial_zones, "residential_first")
+            p3["description"] = "Protects industrial zones by rotating cuts across residential. Best for economic continuity."
+            p3["use_case"] = "Shortage requiring industrial sector to remain operational"
+            p3["recommended_for"] = ["medium", "industrial_protection"]
             plans.append(p3)
 
         logger.info(f"[OPTIMIZER] Generated {len(plans)} plans")
@@ -157,10 +175,11 @@ class GridOptimizer:
             cuts  = [z["name"] for z in cuttable if cut_vars[z["name"]].solution_value() > 0.5]
             saved = round(sum(z["demand"] for z in cuttable if z["name"] in cuts), 2)
             
-            print(f"  ✓ Solver status: {'OPTIMAL' if status == pywraplp.Solver.OPTIMAL else 'FEASIBLE'}")
+            solver_status = "OPTIMAL" if status == pywraplp.Solver.OPTIMAL else "FEASIBLE"
+            print(f"  ✓ Solver status: {solver_status}")
             print(f"  ✓ Plan {plan_id} cuts: {cuts}")
             print(f"  ✓ Power saved: {saved}MW (needed: {deficit}MW)")
-            logger.info(f"[OPTIMIZER] Plan {plan_id} '{label}': cuts={cuts} saved={saved}MW")
+            logger.info(f"[OPTIMIZER] Plan {plan_id} '{label}': cuts={cuts} saved={saved}MW status={solver_status}")
             
             return {
                 "plan_id":         plan_id,
@@ -169,6 +188,7 @@ class GridOptimizer:
                 "power_saved":     saved,
                 "deficit_mw":      deficit,
                 "deficit_covered": saved >= deficit,
+                "solver_status":   solver_status,
                 "note":            note
             }
 
@@ -186,8 +206,82 @@ class GridOptimizer:
             "power_saved":     saved,
             "deficit_mw":      deficit,
             "deficit_covered": saved >= deficit,
+            "solver_status":   "FALLBACK",
             "note":            f"{note} (fallback — full cut applied)"
         }
+
+    def _calculate_confidence(self, plan: Dict[str, Any], deficit: float, strategy: str) -> int:
+        """
+        Calculate confidence score (0-100) based on:
+        - Solver optimality (OPTIMAL/FEASIBLE/FALLBACK)
+        - How well plan covers deficit
+        - Strategy effectiveness (some strategies more proven than others)
+        """
+        power_saved = plan["power_saved"]
+        solver_status = plan.get("solver_status", "FEASIBLE")
+        
+        # Base confidence from solver status
+        if solver_status == "FALLBACK":
+            base = 60  # Fallback cut — risky but guaranteed to work
+        elif solver_status == "OPTIMAL":
+            base = 92  # Optimal solution — theoretically best
+        else:  # FEASIBLE
+            base = 85  # Feasible solution — good but not proven optimal
+        
+        # Strategy modifier — vary confidence by strategy for differentiation
+        if strategy == "industrial_first":
+            base += 5   # Industrial-first is slightly more proven/reliable (protects households)
+        elif strategy == "residential_first":
+            base -= 2   # Residential-first slightly less reliable (affects more critical sectors)
+        # balanced gets no modifier
+        
+        # Adjust based on coverage margin
+        if power_saved >= deficit:
+            margin = (power_saved - deficit) / deficit * 100
+            
+            if margin >= 30:
+                base += 8   # Very safe — 30%+ excess buffer
+            elif margin >= 20:
+                base += 5   # Safe — 20% excess buffer
+            elif margin >= 10:
+                base += 2   # Adequate buffer — 10% excess
+            # else: tight fit — no bonus
+        else:
+            # Under-cut (shouldn't happen with hard constraint, but handle it)
+            shortfall = (deficit - power_saved) / deficit * 100
+            base -= min(int(shortfall / 10) * 3, 30)  # Reduce by ~3% per 10% shortfall
+        
+        # Clamp to valid range [0, 100]
+        return max(0, min(100, base))
+    
+    def _calculate_harm(self, cuts: List[str], zone_map: Dict, residential_zones: set, industrial_zones: set, strategy: str) -> int:
+        """
+        Calculate harm score (0-10) based on:
+        - Number of residential zones cut (high impact on households)
+        - Industrial zones cut (moderate impact on economy)
+        - Strategy effectiveness at minimizing harm
+        """
+        residential_cut = len([z for z in cuts if z in residential_zones])
+        industrial_cut = len([z for z in cuts if z in industrial_zones])
+        
+        # Calculate power impact
+        residential_power = sum(zone_map[z]["demand"] for z in cuts if z in residential_zones)
+        industrial_power = sum(zone_map[z]["demand"] for z in cuts if z in industrial_zones)
+        
+        # Harm calculation — residential has 2x weight (affects households/hospitals)
+        residential_impact = min(10, residential_power / 50)  # Each 50MW = 1 harm point
+        industrial_impact = min(10, industrial_power / 100)   # Each 100MW = 1 harm point (lower weight)
+        
+        harm = (residential_impact * 2 + industrial_impact) / 3  # Weighted average
+        
+        # Strategy modifier
+        if strategy == "industrial_first" and industrial_cut > 0 and residential_cut == 0:
+            harm -= 1  # Bonus if cuts only industrial
+        elif strategy == "residential_first" and residential_cut > 0 and industrial_cut == 0:
+            harm += 1  # Penalty if cuts only residential (higher harm)
+        
+        # Clamp to valid range [0, 10]
+        return int(max(0, min(10, round(harm, 1))))
 
     def select_recommended_plan(self, plans: List[Dict], risk_level: str) -> Optional[int]:
         """
@@ -205,7 +299,7 @@ class GridOptimizer:
         return recommended
 
 
-def format_plans_for_broadcast(plans: List[Dict[str, Any]], grid_state: dict = None) -> List[Dict[str, Any]]:
+def format_plans_for_broadcast(plans: List[Dict[str, Any]], grid_state: Optional[dict] = None) -> List[Dict[str, Any]]:
     """
     Format optimizer plans for WebSocket broadcast.
     Converts zone names to detailed cut objects with power values.
@@ -233,6 +327,11 @@ def format_plans_for_broadcast(plans: List[Dict[str, Any]], grid_state: dict = N
             "power_saved":     round(plan["power_saved"], 2),
             "deficit_mw":      round(plan["deficit_mw"], 2),
             "deficit_covered": plan["deficit_covered"],
+            "confidence":      plan.get("confidence", 75),  # Preserve confidence score
+            "harm_score":      plan.get("harm_score", 5),   # Preserve harm score
+            "description":     plan.get("description", ""),
+            "use_case":        plan.get("use_case", ""),
+            "recommended_for": plan.get("recommended_for", []),
             "note":            plan["note"]
         })
     return formatted
