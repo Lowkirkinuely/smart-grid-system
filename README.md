@@ -41,11 +41,20 @@ AI-powered, human-in-the-loop control room for the Indian grid. The backend fuse
 2. The dashboard’s `useGridData` hook reads `/status` for history, then binds to `/ws`. WebSocket messages carry the latest `grid_state`, `plans`, `ai_analysis`, and `recommended_plan`. Alerts/HITL events are also streamed.
 3. The backend WebSocket broadcasts every time `/grid-state` receives data, so tying the simulator and frontend together simply requires the backend to be running and accessible to both.
 
+## Operator controls
+- Sliders now expose the human intent console without hiding the action buttons; the `COMMIT INTENT` button sits outside the scroll area so you always have access to `manual_override` actions, and the `REJECT PLANS` / `Manual override` buttons ship the proper WebSocket events to the backend.
+- Each plan card’s `Execute Strategy` button sends an `apply_plan` message, so the backend can resume the LangGraph pipeline and record operator approvals. The live alerts and status chips respond to HITL events in real time.
+
 ## Quick checks
 - Backend health: `http://localhost:8000/health`.
 - Live data snapshot: `http://localhost:8000/status`.
 - Plans history: `http://localhost:8000/history/grid` and `/history/analyses`.
 - Frontend: visit `http://localhost:5173` and you should see grid-wide risk, plan cards, and logs as soon as the simulator posts a payload.
+
+## Dockerized stack
+1. Copy `backend/.env.example` → `backend/.env` and `frontend/.env.example` → `frontend/.env`. Provide real values for `GROQ_API_KEY`, Mongo host, etc.
+2. Run `docker-compose up -d --build`. The compose file spins up MongoDB, the FastAPI backend, the Vite-built frontend, and the simulator (`--mode escalate`) so the entire story runs automatically.
+3. Access the UI on `http://localhost:4173`, the backend on `http://localhost:8000`, and watch the simulator log streaming inputs in the `simulator` container. Human overrides sent from the UI go straight to the backend via WebSocket, while data persists in MongoDB.
 
 ## Next steps
 - Hook the sliders/buttons in `OperatorSidebar` and `PlanDrawer` to real control-plane endpoints once the operator intent APIs are available.

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Sparkles, Shield, DollarSign, Play, ChevronUp, ChevronDown } from "lucide-react";
+import { Button } from "../ui/button";
 import type { AiAnalysis, GridPlan } from "../../types/grid";
 
 function CircularGauge({ value, max, color, label, size = 70 }: { value: number; max: number; color: string; label: string; size?: number }) {
@@ -73,9 +74,11 @@ type PlanDrawerProps = {
   recommendedPlanId?: number | null;
   lastUpdated?: string | null;
   loading?: boolean;
+  onApplyPlan?: (planId: number) => void;
+  onRejectPlans?: () => void;
 };
 
-function PlanCard({ plan, recommended }: { plan: GridPlan; recommended?: boolean }) {
+function PlanCard({ plan, recommended, onExecute }: { plan: GridPlan; recommended?: boolean; onExecute?: (id: number) => void }) {
   const coverage = plan.deficit_mw > 0 ? Math.min(100, Math.round((plan.power_saved / plan.deficit_mw) * 100)) : 100;
   const Icon = planIcons[plan.plan_id] ?? Sparkles;
   return (
@@ -120,6 +123,10 @@ function PlanCard({ plan, recommended }: { plan: GridPlan; recommended?: boolean
       <button
         className="w-full h-14 mt-6 rounded-xl font-black text-base tracking-[0.2em] text-white transition-all active:scale-95 uppercase shadow-[0_10px_30px_rgba(0,0,0,0.3)] border-b-4 border-black/30"
         style={{ backgroundColor: recommended ? "#10B981" : "#8b5cf6" }}
+        onClick={(event) => {
+          event.stopPropagation();
+          onExecute?.(plan.plan_id);
+        }}
       >
         <Play className="h-5 w-5 mr-2" /> Execute Strategy
       </button>
@@ -127,7 +134,15 @@ function PlanCard({ plan, recommended }: { plan: GridPlan; recommended?: boolean
   );
 }
 
-export function PlanDrawer({ plans, aiAnalysis, recommendedPlanId, lastUpdated, loading }: PlanDrawerProps) {
+export function PlanDrawer({
+  plans,
+  aiAnalysis,
+  recommendedPlanId,
+  lastUpdated,
+  loading,
+  onApplyPlan,
+  onRejectPlans,
+}: PlanDrawerProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const planCount = plans.length;
   const totalSaved = plans.reduce((sum, plan) => sum + plan.power_saved, 0);
@@ -168,6 +183,18 @@ export function PlanDrawer({ plans, aiAnalysis, recommendedPlanId, lastUpdated, 
             <span className="text-2xl font-black text-white tracking-tight">{riskLabel}</span>
             <p className="text-[9px] font-bold uppercase tracking-[0.3em] text-white/40">{stageDetail}</p>
           </div>
+          {onRejectPlans && (
+            <Button
+              variant="ghost"
+              className="text-white/50 border border-white/10 px-4"
+              onClick={(event) => {
+                event.stopPropagation();
+                onRejectPlans();
+              }}
+            >
+              Reject Plans
+            </Button>
+          )}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -200,13 +227,14 @@ export function PlanDrawer({ plans, aiAnalysis, recommendedPlanId, lastUpdated, 
               <p className="text-lg font-mono font-bold text-white">{updatedLabel}</p>
             </div>
           </div>
-          <div className="flex gap-6 mt-6 overflow-x-auto pb-2 custom-scrollbar h-[330px]">
+          <div className="flex gap-6 mt-6 overflow-x-auto pb-6 custom-scrollbar min-h-[360px]" role="region" aria-label="Optimization plans">
             {planCount > 0 ? (
               plans.map((plan) => (
                 <PlanCard
                   key={plan.plan_id}
                   plan={plan}
                   recommended={plan.plan_id === recommendedPlanId || (!recommendedPlanId && plan.plan_id === 1)}
+                  onExecute={onApplyPlan}
                 />
               ))
             ) : (

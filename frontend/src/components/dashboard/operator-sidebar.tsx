@@ -4,12 +4,21 @@ import { Button } from "../ui/button";
 import type { AiAnalysis, ConnectionState, GridPlan } from "../../types/grid";
 
 const sliderConfig = [
-  { label: "Hospital Protection", icon: Building2, description: "LIFELINE SERVICES", color: "#10B981" },
-  { label: "Industrial Load", icon: Factory, description: "SECTOR REDUCTION", color: "#F59E0B" },
-  { label: "Residential Rotation", icon: Home, description: "GRID BALANCING", color: "#3B82F6" },
+  { id: "hospital", label: "Hospital Protection", icon: Building2, description: "LIFELINE SERVICES", color: "#10B981" },
+  { id: "industrial", label: "Industrial Load", icon: Factory, description: "SECTOR REDUCTION", color: "#F59E0B" },
+  { id: "residential", label: "Residential Rotation", icon: Home, description: "GRID BALANCING", color: "#3B82F6" },
 ];
 
-function PrioritySlider({ label, icon: Icon, description, color }: any) {
+type PrioritySliderProps = {
+  label: string;
+  description: string;
+  icon: typeof Building2;
+  color: string;
+  value: number;
+  onChange: (value: number) => void;
+};
+
+function PrioritySlider({ label, description, icon: Icon, color, value, onChange }: PrioritySliderProps) {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
@@ -22,9 +31,17 @@ function PrioritySlider({ label, icon: Icon, description, color }: any) {
             <p className="text-xs text-slate-400 font-bold uppercase tracking-[0.3em] opacity-60">{description}</p>
           </div>
         </div>
-        <span className="font-mono text-xl font-bold tracking-tighter" style={{ color }}>75%</span>
+        <span className="font-mono text-xl font-bold tracking-tighter" style={{ color }}>
+          {value}%
+        </span>
       </div>
-      <Slider value={[75]} onValueChange={() => undefined} max={100} step={1} className="[&_[data-slot=slider-range]]:bg-emerald-500 [&_[data-slot=slider-thumb]]:h-7 [&_[data-slot=slider-thumb]]:w-7 [&_[data-slot=slider-thumb]]:border-4 [&_[data-slot=slider-thumb]]:border-emerald-500 shadow-2xl cursor-pointer" />
+      <Slider
+        value={[value]}
+        onValueChange={(vals) => onChange(vals[0])}
+        max={100}
+        step={1}
+        className="[&_[data-slot=slider-range]]:bg-emerald-500 [&_[data-slot=slider-thumb]]:h-7 [&_[data-slot=slider-thumb]]:w-7 [&_[data-slot=slider-thumb]]:border-4 [&_[data-slot=slider-thumb]]:border-emerald-500 shadow-2xl cursor-pointer"
+      />
     </div>
   );
 }
@@ -45,9 +62,23 @@ type OperatorSidebarProps = {
   threadId?: string | null;
   lastUpdated?: string | null;
   connectionState?: ConnectionState;
+  onCommitIntent?: () => void;
+  onRejectPlans?: () => void;
+  onTriggerManualOverride?: (action: string) => void;
 };
 
-export function OperatorSidebar({ aiAnalysis, plans, threadId, lastUpdated, connectionState }: OperatorSidebarProps) {
+import { useMemo, useState } from "react";
+
+export function OperatorSidebar({
+  aiAnalysis,
+  plans,
+  threadId,
+  lastUpdated,
+  connectionState,
+  onCommitIntent,
+  onRejectPlans,
+  onTriggerManualOverride,
+}: OperatorSidebarProps) {
   const planCount = plans?.length ?? 0;
   const threadLabel = threadId ? threadId.slice(-6).toUpperCase() : "—";
   const humanState = aiAnalysis?.requires_human_approval ? "Paused" : "Auto";
@@ -60,6 +91,9 @@ export function OperatorSidebar({ aiAnalysis, plans, threadId, lastUpdated, conn
         minute: "2-digit",
       })}`
     : "Waiting for grid";
+  const [sliderValues, setSliderValues] = useState(
+    sliderConfig.reduce((acc, slider) => ({ ...acc, [slider.id]: 75 }), {} as Record<string, number>)
+  );
 
   return (
     <aside className="w-96 rounded-[2.5rem] bg-[#16191f]/80 backdrop-blur-3xl border-2 border-white/10 p-8 flex flex-col shadow-2xl h-full">
@@ -73,16 +107,52 @@ export function OperatorSidebar({ aiAnalysis, plans, threadId, lastUpdated, conn
         </div>
       </div>
 
-      <div className="flex-1 space-y-6 overflow-auto custom-scrollbar pr-3">
-        {sliderConfig.map((slider) => (
-          <PrioritySlider key={slider.label} {...slider} />
-        ))}
-
-        <div className="pt-8 border-t-2 border-white/5">
-          <Button className="w-full h-16 bg-emerald-600 hover:bg-emerald-500 text-white text-lg font-bold tracking-widest border-b-4 border-emerald-800">
-            <Send className="h-6 w-6 mr-3" /> COMMIT INTENT
-          </Button>
+      <div className="flex-1 overflow-hidden">
+        <div className="bg-[#0d111a]/70 border border-white/5 rounded-[2.5rem] p-5 shadow-[0_10px_40px_rgba(0,0,0,0.6)] h-full flex flex-col">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.4em] text-white/40">Priorities</p>
+              <h3 className="text-lg font-black text-white tracking-tight">Human Override</h3>
+            </div>
+            <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/30">Live</span>
+          </div>
+          <div className="space-y-5 overflow-y-auto pr-1 flex-1 custom-scrollbar">
+            {sliderConfig.map((slider) => (
+              <PrioritySlider
+                key={slider.id}
+                label={slider.label}
+                description={slider.description}
+                icon={slider.icon}
+                color={slider.color}
+                value={sliderValues[slider.id]}
+                onChange={(value) => setSliderValues((prev) => ({ ...prev, [slider.id]: value }))}
+              />
+            ))}
+          </div>
         </div>
+      </div>
+
+      <div className="mt-6 space-y-3">
+        <Button
+          className="w-full h-16 bg-emerald-600 hover:bg-emerald-500 text-white text-lg font-bold tracking-widest border-b-4 border-emerald-800"
+          onClick={onCommitIntent}
+        >
+          <Send className="h-6 w-6 mr-3" /> COMMIT INTENT
+        </Button>
+        <Button
+          variant="outline"
+          className="w-full h-14 border-emerald-500 text-emerald-400"
+          onClick={onRejectPlans}
+        >
+          REJECT PLANS
+        </Button>
+        <Button
+          variant="ghost"
+          className="w-full h-12 text-white/80"
+          onClick={() => onTriggerManualOverride?.("increase_protection")}
+        >
+          Manual override: tighten protection
+        </Button>
       </div>
 
       <div className="mt-8 pt-8 border-t-2 border-white/5 space-y-6">

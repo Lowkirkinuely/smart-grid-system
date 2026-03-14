@@ -18,6 +18,9 @@ export default function PowerGridDashboard() {
     connectionState,
     loading,
     error,
+    applyPlan,
+    rejectPlans,
+    sendManualOverride,
   } = useGridData();
 
   return (
@@ -50,6 +53,9 @@ export default function PowerGridDashboard() {
             threadId={threadId}
             lastUpdated={lastUpdated}
             connectionState={connectionState}
+            onCommitIntent={() => sendManualOverride("commit_intent")}
+            onTriggerManualOverride={(action) => sendManualOverride(action)}
+            onRejectPlans={() => rejectPlans("Operator override via UI")}
           />
         </div>
         <div className="pointer-events-auto">
@@ -72,6 +78,8 @@ export default function PowerGridDashboard() {
             recommendedPlanId={recommendedPlanId}
             lastUpdated={lastUpdated}
             loading={loading}
+            onApplyPlan={applyPlan}
+            onRejectPlans={() => rejectPlans("Operator override via UI")}
           />
         </div>
       </div>

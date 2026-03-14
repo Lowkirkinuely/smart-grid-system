@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AiAnalysis,
   ConnectionState,
@@ -139,6 +139,57 @@ export function useGridData() {
     };
   }, [snapshotKey, websocketUrl]);
 
+  const sendWebSocketMessage = useCallback(
+    (payload: Record<string, unknown>) => {
+      const socket = wsRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        setError("Real-time connection not ready yet");
+        return false;
+      }
+      socket.send(JSON.stringify({ ...payload, thread_id: threadId }));
+      return true;
+    },
+    [threadId]
+  );
+
+  const applyPlan = useCallback(
+    (planId: number, note = "Operator approved plan") => {
+      if (!threadId) {
+        setError("No active thread to apply the plan");
+        return;
+      }
+      const success = sendWebSocketMessage({ type: "apply_plan", plan_id: planId, note });
+      if (success) {
+        setStatusStage(`Plan ${planId} submitted`);
+      }
+    },
+    [sendWebSocketMessage, threadId]
+  );
+
+  const rejectPlans = useCallback(
+    (reason = "Operator override") => {
+      if (!threadId) {
+        setError("No active thread to reject");
+        return;
+      }
+      const success = sendWebSocketMessage({ type: "reject_plans", reason });
+      if (success) {
+        setStatusStage("Plans rejected");
+      }
+    },
+    [sendWebSocketMessage, threadId]
+  );
+
+  const sendManualOverride = useCallback(
+    (action: string) => {
+      const success = sendWebSocketMessage({ type: "manual_override", action });
+      if (success) {
+        setStatusStage(`Manual override: ${action}`);
+      }
+    },
+    [sendWebSocketMessage]
+  );
+
   return {
     backendUrl,
     gridState,
@@ -152,5 +203,8 @@ export function useGridData() {
     connectionState,
     loading,
     error,
+    applyPlan,
+    rejectPlans,
+    sendManualOverride,
   };
 }
