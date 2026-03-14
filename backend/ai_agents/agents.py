@@ -339,14 +339,18 @@ class MLAgent:
         sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from ml.model import ml_model
 
-        result = ml_model.predict(grid_data)
-        logger.info(
-            f"[ML AGENT] Risk: {result['ml_risk_level']} | "
-            f"Confidence: {result['ml_confidence']} | "
-            f"Anomaly: {result['anomaly_detected']} | "
-            f"Samples: {result['training_samples']}"
-        )
-        return result
+        try:
+            result = ml_model.predict(grid_data)
+            logger.info(
+                f"[ML AGENT] Risk: {result['ml_risk_level']} | "
+                f"Confidence: {result['ml_confidence']} | "
+                f"Anomaly: {result['anomaly_detected']} | "
+                f"Samples: {result['training_samples']}"
+            )
+            return result
+        except Exception as e:
+            logger.error(f"[ML AGENT] Prediction failed: {str(e)}", exc_info=True)
+            raise
 
     @staticmethod
     def fallback() -> dict:

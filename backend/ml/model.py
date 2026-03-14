@@ -116,6 +116,9 @@ class GridMLModel:
         anom_score  = float(self.anomaly_detector.score_samples(X_scaled)[0])
         is_anomaly  = bool(self.anomaly_detector.predict(X_scaled)[0] == -1)
 
+        # Safety: clamp risk_idx to valid range
+        risk_idx = max(0, min(3, risk_idx))
+
         # Top contributing features for explainability
         importances  = self.classifier.feature_importances_
         top_features = sorted(
@@ -125,7 +128,8 @@ class GridMLModel:
         # Full probability map — pad to 4 classes if model hasn't seen all yet
         proba_map = {RISK_REVERSE[i]: 0.0 for i in range(4)}
         for i, cls in enumerate(self.classifier.classes_):
-            proba_map[RISK_REVERSE[int(cls)]] = round(float(risk_proba[i]), 3)
+            cls_int = max(0, min(3, int(cls)))  # Safety clamp
+            proba_map[RISK_REVERSE[cls_int]] = round(float(risk_proba[i]), 3)
 
         return {
             "ml_risk_level":    RISK_REVERSE[risk_idx],

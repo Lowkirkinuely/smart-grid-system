@@ -78,10 +78,30 @@ def node_ml_analysis(state: GridAnalysisState) -> dict:
         print(f"\033[35m  ✓ Top Features: {result['top_risk_features']}\033[0m")
         return {"ml_prediction": result, "agent_errors": {}}
     except Exception as e:
-        msg = f"ML model error: {e}"
-        logger.error(f"[ML] {msg}")
-        print(f"\033[91m  ✗ [ML MODEL] ERROR — using fallback\033[0m")
-        return {"ml_prediction": MLAgent.fallback(), "agent_errors": {"ml": msg}}
+        msg = f"ML model error: {str(e)}"
+        logger.error(f"[ML] {msg}", exc_info=True)
+        print(f"\033[91m  ✗ [ML MODEL] ERROR — {msg}\033[0m")
+        print(f"\033[91m  ✗ Using rule-based fallback based on deficit\033[0m")
+        
+        # Smart fallback: infer risk from deficit instead of returning "unknown"
+        intake = state.get("intake", {})
+        deficit = intake.get("deficit_mw", 0)
+        is_heatwave = intake.get("heatwave_active", False)
+        
+        if deficit <= 0:
+            fallback_risk = "low"
+        elif deficit <= 50:
+            fallback_risk = "medium" if is_heatwave else "low"
+        elif deficit <= 150:
+            fallback_risk = "high"
+        else:
+            fallback_risk = "critical"
+        
+        fallback = MLAgent.fallback()
+        fallback["ml_risk_level"] = fallback_risk  # Override unknown with smart fallback
+        fallback["ml_confidence"] = 0.5  # Low confidence since model failed
+        
+        return {"ml_prediction": fallback, "agent_errors": {"ml": msg}}
 
 
 def node_grid_health(state: GridAnalysisState) -> dict:
@@ -180,8 +200,8 @@ def node_synthesize(state: GridAnalysisState) -> dict:
 
     # Weighted vote: LLM gets 60%, ML gets 40%
     if ml_risk != "unknown":
-        llm_score = risk_order.get(llm_risk, 0) * 0.60
-        ml_score  = risk_order.get(ml_risk, 0)  * 0.40
+        llm_score = RISK_ORDER.get(llm_risk, 0) * 0.60
+        ml_score  = RISK_ORDER.get(ml_risk, 0)  * 0.40
         fused_idx = round(llm_score + ml_score)
         fused_idx = max(0, min(3, fused_idx))
         final_risk = RISK_REVERSE[fused_idx]
@@ -190,8 +210,8 @@ def node_synthesize(state: GridAnalysisState) -> dict:
 
     # ── Disagreement detection ────────────────────────────────────────────────
 
-    llm_idx  = risk_order.get(llm_risk, 0)
-    ml_idx   = risk_order.get(ml_risk, 0) if ml_risk != "unknown" else llm_idx
+    llm_idx  = RISK_ORDER.get(llm_risk, 0)
+    ml_idx   = RISK_ORDER.get(ml_risk, 0) if ml_risk != "unknown" else llm_idx
     gap      = abs(llm_idx - ml_idx)
     disagree = gap >= 3  # e.g. ML says critical, LLM says low
 
@@ -202,7 +222,7 @@ def node_synthesize(state: GridAnalysisState) -> dict:
         print(f"\033[33m  ⚡ [DISAGREEMENT] ML says '{ml_risk}', LLM says '{llm_risk}' — forcing HITL\033[0m")
 
     # ── Anomaly bump ──────────────────────────────────────────────────────────
-    if ml.get("anomaly_detected") and risk_order.get(final_risk, 0) < 1:
+    if ml.get("anomaly_detected") and RISK_ORDER.get(final_risk, 0) < 1:
         print(f"\033[33m  ⚠️  Anomaly detected — escalating risk from {final_risk} to high\033[0m")
         final_risk = "high"
 
@@ -234,14 +254,23 @@ def node_synthesize(state: GridAnalysisState) -> dict:
     if not recommendations:
         recommendations.append("✅ Grid stable — no immediate action needed")
 
-    requires_approval = final_risk in ["high", "critical"] or disagree
+    # ── HITL: All plans require operator approval ────────────────────────
+    # This is a Human-in-the-Loop system - no auto-execution of power cuts
+    requires_approval = True
+    priority_reason = ""
+    if final_risk in ["high", "critical"]:
+        priority_reason = f"⚠️  PRIORITY: {final_risk.upper()} RISK — Operator review required"
+    elif disagree:
+        priority_reason = "⚠️  PRIORITY: ML/LLM DISAGREEMENT — Operator review required"
+    else:
+        priority_reason = f"ℹ️  {final_risk.upper()} risk — Ready for operator approval"
 
     final = {
         "risk_level":              final_risk,
         "llm_risk_level":          llm_risk,
         "ml_risk_level":           ml_risk,
         "ml_llm_disagreement":     disagree,
-        "risk_reason":             gh.get("analysis", "Insufficient data"),
+        "risk_reason":             f"{priority_reason} | {gh.get('analysis', 'Insufficient data')}",
         "recommendations":         recommendations,
         "demand_trend":            da.get("demand_trend", "unknown"),
         "spike_detected":          da.get("spike_detected", False),
@@ -329,11 +358,12 @@ def node_auto_approve(state: GridAnalysisState) -> dict:
 
 
 def route_after_synthesize(state: GridAnalysisState) -> str:
+    """Route to human review for ALL cases — plan execution always requires operator approval."""
     fa       = state["final_analysis"]
     disagree = state.get("ml_llm_disagreement", False)
-    if fa["risk_level"] in ["high", "critical"] or disagree:
-        return "human_review"
-    return "auto_approve"
+    # For a Human-in-the-Loop grid system, operator ALWAYS reviews before execution
+    # High/critical/disagreement are just flagged as priority
+    return "human_review"
 
 
 # ── GridAnalysisWorkflow class ─────────────────────────────────────────────────
