@@ -72,9 +72,9 @@ class HITLCommand(BaseModel):
     reason: Optional[str] = None
 
 
-# ============================================================================
+
 # FastAPI Application Setup
-# ============================================================================
+
 
 app = FastAPI(
     title="Smart Grid Optimization Engine (RHY)",
@@ -96,9 +96,9 @@ workflow = GridAnalysisWorkflow()
 optimizer = GridOptimizer()
 
 
-# ============================================================================
+
 # Health Check Endpoint
-# ============================================================================
+
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
@@ -343,9 +343,8 @@ async def analyze_grid_state(request: GridStateRequest):
         )
 
 
-# ============================================================================
 # HITL (Human-in-the-Loop) Approval Endpoints
-# ============================================================================
+
 
 @app.get("/paused-workflows", response_model=Dict[str, List[PausedWorkflowInfo]])
 async def get_paused_workflows():
@@ -512,10 +511,8 @@ async def reject_workflow(thread_id: str, reason: str = "Rejected by operator"):
             detail=f"Failed to reject workflow: {str(e)}",
         )
 
-
-# ============================================================================
 # WebSocket Endpoint for Real-Time Streaming + HITL Commands
-# ============================================================================
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
