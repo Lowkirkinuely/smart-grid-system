@@ -29,7 +29,7 @@ def _call_llm(system_prompt: str, user_content: str) -> dict:
     """
     try:
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="llama-3.3-70b-versatile"
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user",   "content": user_content}
