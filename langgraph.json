@@ -1,0 +1,8 @@
+{
+    "dependencies": [
+        "./backend"
+    ],
+    "graphs": {
+        "smart-grid": "./backend/ai_agents/graph.py:graph"
+    }
+}

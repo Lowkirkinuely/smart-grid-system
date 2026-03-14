@@ -20,7 +20,7 @@ from ai_agents.agents import (
     IntakeAgent, GridHealthAgent, DemandAgent,
     DisasterAgent, PriorityAgent, MLAgent
 )
-from .resilience import (
+from ai_agents.resilience import (
     safe_run,
     calculate_fused_confidence,
     fuse_risk, max_risk,
@@ -366,7 +366,7 @@ class GridAnalysisWorkflow:
         workflow.add_edge("human_review", END)
         workflow.add_edge("auto_approve",  END)
 
-        return workflow.compile(checkpointer=self.memory)
+        return workflow.compile()
 
     def run_analysis(self, grid_data: dict, thread_id: str) -> dict:
         """Run full agent pipeline. Graph pauses at HITL for high/critical risk."""
@@ -455,6 +455,7 @@ class GridAnalysisWorkflow:
 # Keeps main.py import interface unchanged
 
 _workflow = GridAnalysisWorkflow()
+graph = _workflow.compiled_graph
 
 def run_analysis(grid_data: dict, thread_id: str) -> dict:
     return _workflow.run_analysis(grid_data, thread_id)
