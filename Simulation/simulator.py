@@ -1,15 +1,5 @@
 """
 Smart Grid Simulator — Enhanced Version (Sanya)
-================================================
-Usage:
-  python simulator.py                        # run all 5 scenarios once
-  python simulator.py --mode escalate        # best for live demo
-  python simulator.py --mode weather         # real/mock weather, one city
-  python simulator.py --mode cities          # cycles all Indian cities
-  python simulator.py --mode random          # random data forever
-  python simulator.py --scenario 3           # single scenario by number
-  python simulator.py --city Mumbai          # set city for weather mode
-  python simulator.py --interval 15          # seconds between each send
 """
 
 import asyncio
@@ -39,14 +29,14 @@ INDIAN_CITIES = [
 ]
 
 BASE_ZONES = [
-    {"name": "zone_hospital_district",   "protected": True,  "base_demand": 80},
-    {"name": "zone_metro_rail",          "protected": True,  "base_demand": 120},
-    {"name": "zone_airport",             "protected": True,  "base_demand": 100},
-    {"name": "zone_industrial_east",     "protected": False, "base_demand": 300},
-    {"name": "zone_industrial_west",     "protected": False, "base_demand": 250},
-    {"name": "zone_residential_north",   "protected": False, "base_demand": 200},
-    {"name": "zone_residential_south",   "protected": False, "base_demand": 180},
-    {"name": "zone_commercial_downtown", "protected": False, "base_demand": 160},
+    {"name": "hospital",     "protected": True,  "base_demand": 80},
+    {"name": "airport",      "protected": True,  "base_demand": 100},
+    {"name": "metro_rail",   "protected": True,  "base_demand": 120},
+    {"name": "industry1",    "protected": False, "base_demand": 300},
+    {"name": "industry2",    "protected": False, "base_demand": 250},
+    {"name": "residential1", "protected": False, "base_demand": 200},
+    {"name": "residential2", "protected": False, "base_demand": 180},
+    {"name": "commercial1",  "protected": False, "base_demand": 160},
 ]
 
 # 5 scenarios covering ALL risk levels — low, medium, high, critical, recovery
@@ -137,6 +127,7 @@ def build_zones(multiplier: float) -> list:
 
 
 def build_payload(demand: float, supply: float, temperature: float, zone_multiplier: float) -> dict:
+    """Build exact payload shape expected by POST /grid-state."""
     return {
         "demand":      round(demand, 2),
         "supply":      round(supply, 2),
@@ -164,7 +155,7 @@ async def send(payload: dict) -> None:
         print("  Cannot connect to backend.")
         print("  Run: cd backend && python -m uvicorn main:app --reload")
     except Exception as e:
-        print(f"  Error: {e}")
+        print(f"  ✗ Error: {e}")
 
 # ── Modes ──────────────────────────────────────────────────────────────────────
 
@@ -176,7 +167,7 @@ async def mode_scenarios(interval: float, single: Optional[int] = None):
         print(f"\n{'─'*60}")
         print(f"  Scenario {i+1}: {s['name']}")
         print(f"  {s['description']}")
-        print(f"  Demand: {s['demand']} MW  |  Supply: {s['supply']} MW  |  Temp: {s['temperature']}C")
+        print(f"  D:{s['demand']}MW  S:{s['supply']}MW  T:{s['temperature']}°C")
         print(f"{'─'*60}")
         payload = build_payload(s["demand"], s["supply"], s["temperature"], s["zone_multiplier"])
         await send(payload)
@@ -289,8 +280,10 @@ async def main():
                         help="Seconds between sends (default: 15)")
     args = parser.parse_args()
 
+    api_status = "real API ✅" if os.getenv("OPENWEATHER_API_KEY") else "mock data (add OPENWEATHER_API_KEY to .env for real weather)"
+
     print("\n" + "="*60)
-    print("  Smart Grid Simulator — Enhanced (Sanya)")
+    print("  Smart Grid Simulator")
     print("="*60)
     print(f"  Backend  : {BACKEND_URL}")
     print(f"  Mode     : {args.mode}")
@@ -313,8 +306,6 @@ async def main():
             await mode_scenarios(args.interval)
     except KeyboardInterrupt:
         print("\n\n  Simulator stopped.\n")
-
-    print("\n  Done.\n")
 
 
 if __name__ == "__main__":
