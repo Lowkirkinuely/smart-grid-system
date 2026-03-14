@@ -7,7 +7,7 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 def _call_llm(system_prompt: str, user_content: str) -> dict:
     """Base LLM caller — strips markdown, parses JSON."""
     response = client.chat.completions.create(
-        model="llama3-8b-8192",
+        model="llama-3.1-8b-instant",
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content}
