@@ -60,7 +60,9 @@ class GridOptimizer:
             }]
 
         cuttable = [z for z in zones if not z.get("protected", False)]
-        logger.info(f"[OPTIMIZER] {len(cuttable)} cuttable zones | {len(zones) - len(cuttable)} protected")
+        logger.info(f"[OPTIMIZER] {len(cuttable)} cuttable zones: {[z['name'] for z in cuttable]}")
+        total_cuttable = sum([z["demand"] for z in cuttable])
+        logger.info(f"[OPTIMIZER] Total cuttable capacity: {total_cuttable}MW (deficit: {deficit}MW)")
 
         plans = []
 
@@ -76,7 +78,8 @@ class GridOptimizer:
             plans.append(p1)
 
         # Plan 2 — Industrial first, residential only if industrial isn't enough
-        industrial = {z["name"] for z in cuttable if "industry" in z["name"]}
+        industrial = {z["name"] for z in cuttable if z.get("type") == "industrial" or "industry" in z["name"].lower() or "industrial" in z["name"].lower()}
+        print(f"\n[OPTIMIZER] Plan 2 will prioritize INDUSTRIAL zones: {industrial}")
         p2 = self._solve(
             cuttable, deficit,
             priority_names=industrial,
@@ -88,7 +91,8 @@ class GridOptimizer:
             plans.append(p2)
 
         # Plan 3 — Residential first, industrial only if residential isn't enough
-        residential = {z["name"] for z in cuttable if "residential" in z["name"]}
+        residential = {z["name"] for z in cuttable if z.get("type") == "residential" or "residential" in z["name"].lower()}
+        print(f"\n[OPTIMIZER] Plan 3 will prioritize RESIDENTIAL zones: {residential}")
         p3 = self._solve(
             cuttable, deficit,
             priority_names=residential,
@@ -121,6 +125,11 @@ class GridOptimizer:
             logger.error("[OPTIMIZER] Failed to create SCIP solver")
             return None
 
+        print(f"\n\033[96m[OPTIMIZER] Solving Plan {plan_id}: '{label}'\033[0m")
+        print(f"  Priority zones (cost=1): {priority_names}")
+        non_priority = {z["name"] for z in cuttable} - priority_names
+        print(f"  Non-priority zones (cost=100): {non_priority}")
+
         cut_vars = {
             z["name"]: solver.IntVar(0, 1, z["name"])
             for z in cuttable
@@ -147,7 +156,12 @@ class GridOptimizer:
         if status in (pywraplp.Solver.OPTIMAL, pywraplp.Solver.FEASIBLE):
             cuts  = [z["name"] for z in cuttable if cut_vars[z["name"]].solution_value() > 0.5]
             saved = round(sum(z["demand"] for z in cuttable if z["name"] in cuts), 2)
+            
+            print(f"  ✓ Solver status: {'OPTIMAL' if status == pywraplp.Solver.OPTIMAL else 'FEASIBLE'}")
+            print(f"  ✓ Plan {plan_id} cuts: {cuts}")
+            print(f"  ✓ Power saved: {saved}MW (needed: {deficit}MW)")
             logger.info(f"[OPTIMIZER] Plan {plan_id} '{label}': cuts={cuts} saved={saved}MW")
+            
             return {
                 "plan_id":         plan_id,
                 "label":           label,
@@ -160,8 +174,11 @@ class GridOptimizer:
 
         # Solver infeasible — cut everything cuttable as last resort
         logger.warning(f"[OPTIMIZER] Plan {plan_id} infeasible — applying full fallback cut")
+        print(f"  ✗ Solver infeasible — using fallback")
         cuts  = [z["name"] for z in cuttable]
         saved = round(sum(z["demand"] for z in cuttable), 2)
+        print(f"  ✓ Fallback cuts all zones: {cuts}")
+        print(f"  ✓ Power saved: {saved}MW\n")
         return {
             "plan_id":         plan_id,
             "label":           label,
@@ -188,17 +205,31 @@ class GridOptimizer:
         return recommended
 
 
-def format_plans_for_broadcast(plans: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def format_plans_for_broadcast(plans: List[Dict[str, Any]], grid_state: dict = None) -> List[Dict[str, Any]]:
     """
     Format optimizer plans for WebSocket broadcast.
-    Ensures all numeric fields are rounded for clean JSON.
+    Converts zone names to detailed cut objects with power values.
     """
+    zones_map = {}
+    if grid_state:
+        zones_map = {z["name"]: z for z in grid_state.get("zones", [])}
+    
     formatted = []
     for plan in plans:
+        # Convert zone names to detailed cut objects
+        detailed_cuts = []
+        for zone_name in plan.get("cuts", []):
+            zone_info = zones_map.get(zone_name, {})
+            detailed_cuts.append({
+                "zone": zone_name,
+                "power_mw": round(zone_info.get("demand", 0), 2),
+                "sector": zone_info.get("sector", "unknown")
+            })
+        
         formatted.append({
             "plan_id":         plan["plan_id"],
             "label":           plan["label"],
-            "cuts":            plan["cuts"],
+            "cuts":            detailed_cuts,  # Now detailed objects instead of just names
             "power_saved":     round(plan["power_saved"], 2),
             "deficit_mw":      round(plan["deficit_mw"], 2),
             "deficit_covered": plan["deficit_covered"],

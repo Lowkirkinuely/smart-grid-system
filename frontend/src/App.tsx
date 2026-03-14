@@ -3,10 +3,13 @@ import { GlobalHeader } from "./components/dashboard/global-header";
 import { OperatorSidebar } from "./components/dashboard/operator-sidebar";
 import { AgentSidebar } from "./components/dashboard/agent-sidebar";
 import { PlanDrawer } from "./components/dashboard/plan-drawer";
+import { TestDashboard } from "./components/dashboard/test-dashboard";
+import { GridProvider } from "./lib/context";
 
 export default function PowerGridDashboard() {
   return (
-    <main className="h-screen w-screen overflow-hidden bg-[#0B0D11] relative font-sans text-slate-200">
+    <GridProvider>
+      <main className="h-screen w-screen overflow-hidden bg-[#0B0D11] relative font-sans text-slate-200">
       {/* 1. BACKGROUND LAYER: The Map fills everything */}
       <div className="absolute inset-0 z-0">
          <IndiaMap onStateClick={(name: string) => console.log(name)} />
@@ -35,6 +38,12 @@ export default function PowerGridDashboard() {
           <PlanDrawer />
         </div>
       </div>
+
+      {/* Test Dashboard - Bottom Right */}
+      <div className="absolute bottom-0 right-0 p-6 pointer-events-auto">
+        <TestDashboard />
+      </div>
     </main>
+    </GridProvider>
   );
 }
