@@ -2,12 +2,6 @@
 Weather module — fetches real-time weather data.
 Uses OpenWeatherMap free API with async httpx (faster than requests).
 
-Improvements over base version:
-  - Async (non-blocking, faster)
-  - Mock data biased to Indian summer temperatures, not London
-  - Indian cities pre-configured with realistic supply values
-  - Graceful fallback if API key missing or call fails
-
 Setup (optional):
   Add OPENWEATHER_API_KEY=your_key to your .env file
   Get a free key at: https://openweathermap.org/api
@@ -42,12 +36,6 @@ async def fetch_weather(city: str) -> Dict[str, Any]:
     """
     Fetch real weather for a city asynchronously.
     Falls back to mock data if no API key or call fails.
-
-    Args:
-        city: City name e.g. "Delhi", "Mumbai"
-
-    Returns:
-        Dict with temperature, humidity, description, wind_speed, real (bool)
     """
     if not OPENWEATHER_API_KEY:
         return get_mock_weather(city)
@@ -95,15 +83,7 @@ async def fetch_weather(city: str) -> Dict[str, Any]:
 def get_mock_weather(city: str) -> Dict[str, Any]:
     """
     Returns realistic mock weather biased toward Indian summer conditions.
-    Friend's version used London temps (15-42C) — this uses Indian ranges.
-
-    Args:
-        city: City name (used as label only)
-
-    Returns:
-        Mock weather dict matching same shape as real API response
     """
-    # Weighted temperature ranges — India runs hot
     temp = random.choices(
         population=[
             random.uniform(25, 33),  # pleasant
