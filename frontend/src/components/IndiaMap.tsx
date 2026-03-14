@@ -1,94 +1,136 @@
-import React, { useState } from "react";
+import { useState, useEffect } from "react";
+
+const REGION_MAP: Record<string, string> = {
+  "andaman-and-nicobar-islands": "SR",
+  "andhra-pradesh": "SR",
+  "arunachal-pradesh": "NER",
+  "assam": "NER",
+  "bihar": "ER",
+  "chandigarh": "NR",
+  "chhattisgarh": "WR",
+  "dadra-and-nagar-haveli-and-daman-and-diu": "WR",
+  "delhi": "NR",
+  "goa": "SR",
+  "gujarat": "WR",
+  "haryana": "NR",
+  "himachal-pradesh": "NR",
+  "jammu-and-kashmir": "NR",
+  "jharkhand": "ER",
+  "karnataka": "SR",
+  "kerala": "SR",
+  "ladakh": "NR",
+  "lakshadweep": "SR",
+  "madhya-pradesh": "WR",
+  "maharashtra": "WR",
+  "manipur": "NER",
+  "meghalaya": "NER",
+  "mizoram": "NER",
+  "nagaland": "NER",
+  "odisha": "ER",
+  "puducherry": "SR",
+  "punjab": "NR",
+  "rajasthan": "NR",
+  "sikkim": "NER",
+  "tamil-nadu": "SR",
+  "telangana": "SR",
+  "tripura": "NER",
+  "uttar-pradesh": "NR",
+  "uttarakhand": "NR",
+  "west-bengal": "ER",
+};
+
+const REGION_CONFIG: Record<string, { color: string; label: string; status: string; load: string }> = {
+  NR:  { color: "#ef4444", label: "Northern",   status: "CRITICAL", load: "112%" },
+  WR:  { color: "#10b981", label: "Western",    status: "STABLE",   load: "74%"  },
+  SR:  { color: "#10b981", label: "Southern",   status: "STABLE",   load: "62%"  },
+  ER:  { color: "#f59e0b", label: "Eastern",    status: "WARNING",  load: "91%"  },
+  NER: { color: "#3b82f6", label: "North-East", status: "STABLE",   load: "45%"  },
+};
 
 export default function IndiaMap({ onStateClick }: { onStateClick: (name: string) => void }) {
-  const [hoveredRegion, setHoveredRegion] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [mapData, setMapData]     = useState<any>(null);
+  const [loading, setLoading]     = useState(true);
 
-  // Power Grid Regions
-  const regions = [
-    { id: "NR", name: "Northern Grid", path: "M250 50 L350 80 L380 180 L320 280 L180 280 L150 180 L180 80 Z", status: "CRITICAL", load: "112%", color: "#ef4444" },
-    { id: "WR", name: "Western Grid", path: "M180 280 L100 320 L70 450 L180 550 L250 450 L220 280 Z", status: "STABLE", load: "74%", color: "#10b981" },
-    { id: "SR", name: "Southern Grid", path: "M250 450 L350 550 L250 750 L150 550 Z", status: "STABLE", load: "62%", color: "#10b981" },
-    { id: "ER", name: "Eastern Grid", path: "M320 280 L450 320 L480 450 L350 550 L250 450 L320 280 Z", status: "WARNING", load: "91%", color: "#f59e0b" },
-    { id: "NER", name: "North-Eastern Grid", path: "M450 320 L550 300 L580 380 L480 450 Z", status: "STABLE", load: "45%", color: "#10b981" },
-  ];
+  useEffect(() => {
+    import("@svg-maps/india")
+      .then((mod) => { setMapData(mod.default || mod); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const hoveredRegionId = hoveredId ? REGION_MAP[hoveredId] : null;
+  const hoveredRegion   = hoveredRegionId ? REGION_CONFIG[hoveredRegionId] : null;
+  const hoveredName     = mapData?.locations?.find((l: any) => l.id === hoveredId)?.name ?? hoveredId;
+
+  if (loading) return (
+    <div className="w-full h-full flex items-center justify-center">
+      <p className="text-white/30 text-sm font-bold uppercase tracking-widest animate-pulse">Loading Map...</p>
+    </div>
+  );
+
+  if (!mapData) return (
+    <div className="w-full h-full flex items-center justify-center">
+      <p className="text-rose-400 text-sm font-bold">Map package missing — run: npm install @svg-maps/india</p>
+    </div>
+  );
 
   return (
-    <div className="w-full h-full flex items-center justify-center relative bg-transparent p-10">
-      
-      {/* TACTICAL TOOLTIP */}
-      {hoveredRegion && (
-        <div className="absolute top-10 right-10 bg-[#16191f]/95 backdrop-blur-2xl border-2 border-white/10 p-6 rounded-[2rem] shadow-2xl z-50 animate-in fade-in zoom-in duration-200 min-w-[280px] pointer-events-none">
-          <p className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em] mb-1 text-right">Regional Despatch Centre</p>
-          <p className="text-3xl font-bold text-white tracking-tighter mb-4">{hoveredRegion.toUpperCase()}</p>
-          
-          {regions.filter(r => r.name === hoveredRegion).map(r => (
-            <div key={r.id} className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold text-white/40 uppercase">Current Load</span>
-                <span className="font-mono text-xl font-bold" style={{ color: r.color }}>{r.load}</span>
-              </div>
-              <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                <div className="h-full transition-all duration-500" style={{ width: r.load, backgroundColor: r.color }} />
-              </div>
-              <div className="flex items-center gap-3 pt-2 border-t border-white/5">
-                <div className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: r.color }} />
-                <p className="text-sm font-black tracking-widest" style={{ color: r.color }}>STATUS: {r.status}</p>
-              </div>
+    <div className="w-full h-full flex items-center justify-center relative bg-transparent">
+
+      {hoveredId && hoveredRegion && (
+        <div className="absolute top-10 right-10 bg-[#16191f]/95 backdrop-blur-2xl border-2 border-white/10 p-6 rounded-[2rem] shadow-2xl z-50 min-w-[260px] pointer-events-none">
+          <p className="text-[10px] font-bold text-white/30 uppercase tracking-[0.3em] mb-1">{hoveredRegion.label} Grid</p>
+          <p className="text-2xl font-bold text-white tracking-tighter mb-4 capitalize">{hoveredName}</p>
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-bold text-white/40 uppercase">Load</span>
+              <span className="font-mono text-xl font-bold" style={{ color: hoveredRegion.color }}>{hoveredRegion.load}</span>
             </div>
-          ))}
+            <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+              <div className="h-full transition-all duration-500" style={{ width: hoveredRegion.load, backgroundColor: hoveredRegion.color }} />
+            </div>
+            <div className="flex items-center gap-3 pt-2 border-t border-white/5">
+              <div className="w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: hoveredRegion.color }} />
+              <p className="text-sm font-black tracking-widest" style={{ color: hoveredRegion.color }}>{hoveredRegion.status}</p>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* REGIONAL GRID SVG */}
-      <svg viewBox="0 0 600 800" className="w-full h-full drop-shadow-[0_0_50px_rgba(0,0,0,0.5)]">
-        <g>
-          {regions.map((region) => (
+      <svg viewBox={mapData.viewBox} className="w-full h-full" style={{ filter: "drop-shadow(0 0 40px rgba(0,0,0,0.6))" }}>
+        {mapData.locations?.map((location: any) => {
+          const regionId = REGION_MAP[location.id];
+          const region   = regionId ? REGION_CONFIG[regionId] : null;
+          const color    = region?.color ?? "#6b7280";
+          const isHover  = hoveredId === location.id;
+          return (
             <path
-              key={region.id}
-              d={region.path}
-              fill={region.color}
-              fillOpacity={hoveredRegion === region.name ? "0.4" : "0.15"}
-              stroke={region.color}
-              strokeWidth={hoveredRegion === region.name ? "4" : "2"}
-              className="transition-all duration-300 cursor-pointer"
-              onMouseEnter={() => setHoveredRegion(region.name)}
-              onMouseLeave={() => setHoveredRegion(null)}
-              onClick={() => onStateClick(region.name)}
-              style={{
-                filter: hoveredRegion === region.name ? `drop-shadow(0 0 15px ${region.color})` : 'none'
-              }}
+              key={location.id}
+              id={location.id}
+              d={location.path}
+              fill={color}
+              fillOpacity={isHover ? 0.55 : 0.2}
+              stroke={color}
+              strokeWidth={isHover ? 1.5 : 0.5}
+              strokeOpacity={isHover ? 1 : 0.7}
+              className="transition-all duration-200 cursor-pointer"
+              style={{ filter: isHover ? `drop-shadow(0 0 6px ${color})` : "none" }}
+              onMouseEnter={() => setHoveredId(location.id)}
+              onMouseLeave={() => setHoveredId(null)}
+              onClick={() => onStateClick(location.name)}
             />
-          ))}
-        </g>
-
-        {/* Region Labels */}
-        {regions.map(r => {
-            const coords = r.path.split(' ')[0].replace('M', '').split(' ');
-            return (
-                <text 
-                    key={`label-${r.id}`}
-                    x={parseInt(coords[0]) + 20} 
-                    y={parseInt(coords[1]) + 60} 
-                    fill="white" 
-                    fontSize="10" 
-                    className="font-bold opacity-30 pointer-events-none uppercase tracking-widest"
-                >
-                    {r.id}
-                </text>
-            )
+          );
         })}
       </svg>
 
-      {/* LEGEND */}
-      <div className="absolute bottom-10 left-10 flex flex-col gap-4 pointer-events-auto">
-         <div className="flex items-center gap-4 bg-white/5 px-6 py-3 rounded-2xl border border-white/5 backdrop-blur-md shadow-xl">
-            <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981]" />
-            <span className="text-[11px] font-bold text-white/40 uppercase tracking-[0.2em]">Grid Stable</span>
-         </div>
-         <div className="flex items-center gap-4 bg-white/5 px-6 py-3 rounded-2xl border border-white/5 backdrop-blur-md shadow-xl">
-            <div className="w-3 h-3 rounded-full bg-rose-500 shadow-[0_0_10px_#ef4444] animate-pulse" />
-            <span className="text-[11px] font-bold text-white/40 uppercase tracking-[0.2em]">Regional Stress</span>
-         </div>
+      <div className="absolute bottom-8 left-8 flex flex-col gap-2 pointer-events-auto">
+        {Object.entries(REGION_CONFIG).map(([id, r]) => (
+          <div key={id} className="flex items-center gap-3 bg-white/5 px-4 py-2 rounded-xl border border-white/5 backdrop-blur-md">
+            <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: r.color, boxShadow: `0 0 6px ${r.color}` }} />
+            <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{r.label}</span>
+            <span className="text-[10px] font-mono font-bold ml-auto pl-3" style={{ color: r.color }}>{r.load}</span>
+          </div>
+        ))}
       </div>
     </div>
   );
