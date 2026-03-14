@@ -11,6 +11,7 @@ load_dotenv()
 from websocket_manager import manager
 from optimizer import optimize_power
 from ai_agents.graph import run_analysis, resume_with_human_decision
+from ml.model import ml_model
 
 app = FastAPI(title="Smart Grid — Human-in-the-Loop Backend")
 
@@ -46,7 +47,12 @@ paused_threads: set = set()   # threads actually paused at LangGraph interrupt
 
 @app.get("/")
 def health():
-    return {"status": "Smart Grid Backend Running ✅"}
+    return {
+        "status":           "Smart Grid Backend Running ✅",
+        "ml_samples":       len(ml_model.history_y),
+        "ml_trained":       ml_model.is_trained,
+        "paused_threads":   list(paused_threads)
+    }
 
 
 @app.post("/grid-state")
@@ -61,7 +67,7 @@ async def receive_grid_state(state: GridState):
     plans        = optimize_power(latest_grid_state)
     latest_plans = plans
 
-    # LangGraph multi-agent pipeline
+    # LangGraph multi-agent pipeline (LLM + ML inside)
     try:
         ai_analysis        = run_analysis(latest_grid_state, thread_id)
         latest_ai_analysis = ai_analysis
@@ -73,11 +79,15 @@ async def receive_grid_state(state: GridState):
             "recommendations":         ["Manual assessment required"],
             "requires_human_approval": False,
             "avg_confidence":          0.0,
+            "ml_risk_level":           "unknown",
+            "llm_risk_level":          "unknown",
+            "ml_llm_disagreement":     False,
+            "anomaly_detected":        False,
             "agent_errors":            {"pipeline": str(e)}
         }
         latest_ai_analysis = ai_analysis
 
-    requires_approval = ai_analysis.get("risk_level") in ["high", "critical"]
+    requires_approval = ai_analysis.get("requires_human_approval", False)
 
     # Register thread as paused only if HITL gate was triggered
     if requires_approval:
@@ -96,6 +106,10 @@ async def receive_grid_state(state: GridState):
         "status":                  "ok",
         "plans_generated":         len(plans),
         "risk_level":              ai_analysis.get("risk_level"),
+        "ml_risk_level":           ai_analysis.get("ml_risk_level"),
+        "llm_risk_level":          ai_analysis.get("llm_risk_level"),
+        "ml_llm_disagreement":     ai_analysis.get("ml_llm_disagreement", False),
+        "anomaly_detected":        ai_analysis.get("anomaly_detected", False),
         "thread_id":               thread_id,
         "requires_human_approval": requires_approval
     }
@@ -108,7 +122,25 @@ def get_status():
         "plans":           latest_plans,
         "ai_analysis":     latest_ai_analysis,
         "thread_id":       current_thread_id,
-        "paused_threads":  list(paused_threads)
+        "paused_threads":  list(paused_threads),
+        "ml_samples":      len(ml_model.history_y),
+        "ml_trained":      ml_model.is_trained
+    }
+
+
+@app.get("/ml/stats")
+def get_ml_stats():
+    """Endpoint for dashboard to show ML learning progress."""
+    return {
+        "training_samples":  len(ml_model.history_y),
+        "is_trained":        ml_model.is_trained,
+        "patterns_learned":  len(ml_model.history_y) >= 50,
+        "label_distribution": {
+            "low":      ml_model.history_y.count(0),
+            "medium":   ml_model.history_y.count(1),
+            "high":     ml_model.history_y.count(2),
+            "critical": ml_model.history_y.count(3)
+        }
     }
 
 
@@ -167,11 +199,21 @@ async def websocket_endpoint(websocket: WebSocket):
                     })
                     continue
 
+                # ── Online learning: update ML with confirmed risk ─────────
+                try:
+                    confirmed_risk = latest_ai_analysis.get("risk_level", "unknown")
+                    if confirmed_risk != "unknown":
+                        ml_model.update(latest_grid_state, confirmed_risk)
+                        print(f"\033[35m[ML] Model updated with confirmed risk: {confirmed_risk} | Total samples: {len(ml_model.history_y)}\033[0m")
+                except Exception as e:
+                    print(f"[ML] Model update failed: {e}")
+
                 await manager.broadcast({
                     "type":          "plan_applied",
                     "plan_id":       plan_id,
                     "thread_id":     thread_id,
                     "operator_note": note,
+                    "ml_samples":    len(ml_model.history_y),
                     "message":       f"✅ Operator applied Plan {plan_id}: {note}"
                 })
 
@@ -203,6 +245,15 @@ async def websocket_endpoint(websocket: WebSocket):
                     })
                     continue
 
+                # Still learn from rejection — human confirmed the risk level was wrong
+                try:
+                    rejected_risk = data.get("confirmed_risk")
+                    if rejected_risk and rejected_risk != "unknown":
+                        ml_model.update(latest_grid_state, rejected_risk)
+                        print(f"\033[35m[ML] Model updated from rejection. Confirmed risk: {rejected_risk}\033[0m")
+                except Exception as e:
+                    print(f"[ML] Model update from rejection failed: {e}")
+
                 await manager.broadcast({
                     "type":    "plans_rejected",
                     "reason":  reason,
@@ -221,9 +272,9 @@ async def websocket_endpoint(websocket: WebSocket):
 
             # ── Heartbeat response ────────────────────────────────────────────
             elif msg_type == "pong":
-                pass   # client acknowledged ping, connection is alive
+                pass
 
-            # ── Unknown message type ──────────────────────────────────────────
+            # ── Unknown ───────────────────────────────────────────────────────
             else:
                 await websocket.send_json({
                     "type":    "error",
