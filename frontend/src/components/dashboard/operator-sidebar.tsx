@@ -470,8 +470,12 @@ export function OperatorSidebar() {
           <PrioritySlider label="Residential Rotation" icon={Home}      value={residentialRotation} onChange={setResidentialRotation} description="GRID BALANCING"    color="#3B82F6" />
 
           <div className="pt-8 border-t-2 border-white/5">
-            <Button className="w-full h-16 bg-emerald-600 hover:bg-emerald-500 text-white text-lg font-bold tracking-widest border-b-4 border-emerald-800">
-              <Send className="h-6 w-6 mr-3" /> COMMIT INTENT
+            <Button
+              onClick={handleCommitIntent}
+              disabled={isLoading}
+              className="w-full h-16 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white text-lg font-bold tracking-widest border-b-4 border-emerald-800"
+            >
+              <Send className="h-6 w-6 mr-3" /> {isLoading ? "SUBMITTING..." : "COMMIT INTENT"}
             </Button>
           </div>
         </div>
