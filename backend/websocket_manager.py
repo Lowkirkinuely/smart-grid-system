@@ -120,6 +120,38 @@ class ConnectionManager:
         self._add_to_history(msg)
         await self.broadcast(msg)
 
+    async def broadcast_agent_activity(
+        self,
+        agent_name: str,
+        activity: str,
+        status: str = "active"
+    ):
+        """Broadcast agent activity/reasoning logs."""
+        msg = {
+            "type": "agent_activity",
+            "timestamp": datetime.now().isoformat(),
+            "agent_name": agent_name,
+            "activity": activity,
+            "status": status
+        }
+        self._add_to_history(msg)
+        await self.broadcast(msg)
+
+    async def broadcast_grid_state_update(
+        self,
+        grid_state: Dict[str, Any],
+        message: str = "Grid state updated"
+    ):
+        """Broadcast updated grid state after plan execution."""
+        msg = {
+            "type": "grid_update",
+            "timestamp": datetime.now().isoformat(),
+            "grid_state": grid_state,
+            "message": message
+        }
+        self._add_to_history(msg)
+        await self.broadcast(msg)
+
     # ── Heartbeat ──────────────────────────────────────────────────────────────
 
     async def heartbeat(self, websocket: WebSocket) -> bool:

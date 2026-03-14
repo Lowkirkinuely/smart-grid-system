@@ -312,6 +312,48 @@ export function OperatorSidebar() {
   const [hospitalProtection,  setHospitalProtection]  = useState(95);
   const [industrialShedding,  setIndustrialShedding]  = useState(40);
   const [residentialRotation, setResidentialRotation] = useState(25);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleCommitIntent = async () => {
+    setIsLoading(true);
+    console.log("[Operator] Committing intent with values:", { hospitalProtection, industrialShedding, residentialRotation });
+    try {
+      const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+      
+      const payload = {
+        demand: 520 + (hospitalProtection * 2),
+        supply: 480,
+        temperature: 42.5,
+        zones: [
+          { name: "Hospital_North", demand: 150.0 * (hospitalProtection / 100), protected: true, type: "hospital" },
+          { name: "Residential_South", demand: 200.0, protected: false, type: "residential" },
+          { name: "Industrial_East", demand: 100.0 * (industrialShedding / 100), protected: false, type: "industrial" },
+          { name: "Residential_West", demand: 70.0 * (residentialRotation / 100), protected: false, type: "residential" }
+        ]
+      };
+      
+      console.log("[Operator] Sending grid state:", payload);
+      
+      const response = await fetch(`${BACKEND_URL}/grid-state`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      console.log("[Operator] Response status:", response.status);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log("[Operator] Grid state submitted successfully:", data);
+    } catch (error) {
+      console.error("[Operator] Failed to commit intent:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const [showSim,    setShowSim]    = useState(false);
   const [isRunning,  setIsRunning]  = useState(false);

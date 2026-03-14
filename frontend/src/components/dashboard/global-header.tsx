@@ -1,4 +1,6 @@
 import { Thermometer, Zap, Activity, ShieldAlert, Clock, Globe } from "lucide-react";
+import { useGrid } from "../../lib/context";
+import { useState, useEffect } from "react";
 
 function HeaderMetric({ icon: Icon, label, value, unit, color, trend }: any) {
   return (
@@ -21,6 +23,17 @@ function HeaderMetric({ icon: Icon, label, value, unit, color, trend }: any) {
 }
 
 export function GlobalHeader() {
+  const { gridState } = useGrid();
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const deficit = gridState.demand - gridState.supply;
+  const deficitColor = deficit > 0 ? "#EF4444" : "#10B981";
+
   return (
     <header className="h-28 w-full rounded-[2.5rem] bg-[#16191f]/60 backdrop-blur-3xl border-2 border-white/10 flex items-center justify-between px-10 shadow-2xl overflow-hidden relative group">
       <div className="flex items-center gap-6">
@@ -38,15 +51,21 @@ export function GlobalHeader() {
 
       <div className="flex-1 flex justify-center mx-10">
         <div className="flex bg-black/30 rounded-3xl border border-white/5 shadow-inner">
-          <HeaderMetric icon={Thermometer} label="Ambient Temp" value="42.5" unit="°C" color="#F59E0B" trend="+2.1" />
-          <HeaderMetric icon={Zap} label="Total Supply" value="480" unit="MW" color="#10B981" />
-          <HeaderMetric icon={Activity} label="Live Demand" value="520" unit="MW" color="#3B82F6" />
-          <HeaderMetric icon={ShieldAlert} label="System Deficit" value="-40" unit="MW" color="#EF4444" />
+          <HeaderMetric icon={Thermometer} label="Ambient Temp" value={gridState.temperature.toFixed(1)} unit="°C" color="#F59E0B" />
+          <HeaderMetric icon={Zap} label="Total Supply" value={gridState.supply.toFixed(0)} unit="MW" color="#10B981" />
+          <HeaderMetric icon={Activity} label="Live Demand" value={gridState.demand.toFixed(0)} unit="MW" color="#3B82F6" />
+          <HeaderMetric icon={ShieldAlert} label="System Deficit" value={deficit.toFixed(0)} unit="MW" color={deficitColor} />
         </div>
       </div>
 
       <div className="flex items-center gap-10">
         <div className="flex gap-8">
+           <div className="flex items-center gap-2">
+              <div className={`w-3 h-3 rounded-full ${gridState.isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+              <span className="text-[10px] font-mono text-white/50">
+                {gridState.isConnected ? 'Backend: Connected' : 'Backend: Disconnected'}
+              </span>
+           </div>
            <div className="flex flex-col items-center">
               <div className="relative w-14 h-14">
                  <svg className="w-full h-full -rotate-90" viewBox="0 0 56 56">
@@ -61,7 +80,9 @@ export function GlobalHeader() {
         <div className="flex flex-col items-end border-l-2 border-white/5 pl-10">
            <div className="flex items-center gap-3">
               <Clock className="h-5 w-5 text-purple-400" />
-              <span className="text-3xl font-mono font-bold tracking-tight text-white">15:09:44</span>
+              <span className="text-3xl font-mono font-bold tracking-tight text-white">
+                {currentTime.toLocaleTimeString("en-IN", { hour12: false })}
+              </span>
            </div>
            <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-white/30 mt-1">Local Time (IST)</span>
         </div>

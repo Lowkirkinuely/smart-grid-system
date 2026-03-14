@@ -51,6 +51,7 @@ class Zone(BaseModel):
     name:      str
     demand:    float
     protected: bool = False
+    type:      Optional[str] = None  # "hospital", "residential", "industrial", etc.
 
 class GridState(BaseModel):
     demand:      float = Field(..., ge=0, description="Total grid demand in MW")
@@ -151,13 +152,19 @@ async def receive_grid_state(state: GridState):
         "stage":     "Running parallel AI analysis + optimization...",
         "thread_id": thread_id
     })
+    
+    # Broadcast initial agent activity messages
+    await manager.broadcast_agent_activity("GRID", "Data intake and validation started", "running")
+    await manager.broadcast_agent_activity("ML", "Pattern analysis and anomaly detection initiated", "running")
 
     # OR-Tools — offloaded to thread so event loop stays free
     plans = await asyncio.to_thread(optimize_power, grid_dict)
+    await manager.broadcast_agent_activity("OPTIMIZER", "OR-Tools optimization completed with 3 plan candidates", "complete")
 
     # LangGraph multi-agent pipeline
     try:
         ai_analysis = await asyncio.to_thread(run_analysis, grid_dict, thread_id)
+        await manager.broadcast_agent_activity("RISK", "Multi-agent analysis complete - risk assessment ready", "complete")
     except GraphInterrupt:
         logger.warning(f"[GRID-STATE] Graph paused at HITL | thread: {thread_id}")
         ai_analysis = {
@@ -194,6 +201,15 @@ async def receive_grid_state(state: GridState):
         current_thread_id  = thread_id
         if requires_approval:
             paused_threads.add(thread_id)
+            print(f"\n\033[93m[GRID-STATE] Thread PAUSED for human review:\033[0m")
+            print(f"  thread_id: {thread_id}")
+            print(f"  risk_level: {ai_analysis.get('risk_level', 'unknown')}")
+            print(f"  requires_approval: {requires_approval}")
+            print(f"  paused_threads: {list(paused_threads)}\n")
+        else:
+            print(f"\033[92m[GRID-STATE] Analysis complete (no approval needed):\033[0m")
+            print(f"  thread_id: {thread_id}")
+            print(f"  risk_level: {ai_analysis.get('risk_level', 'low')}\n")
 
     # Save to MongoDB — fire and forget, never blocks response
     asyncio.create_task(db.save_grid_state(grid_dict, thread_id))
@@ -219,7 +235,7 @@ async def receive_grid_state(state: GridState):
         "thread_id":               thread_id,
         "timestamp":               datetime.now().isoformat(),
         "grid_state":              grid_dict,
-        "plans":                   format_plans_for_broadcast(plans),
+        "plans":                   format_plans_for_broadcast(plans, grid_dict),
         "recommended_plan":        recommended_plan,
         "ai_analysis":             ai_analysis,
         "requires_human_approval": requires_approval
@@ -373,25 +389,17 @@ async def decision_stats():
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
-        # Send current state immediately on connect
+        # Send welcome message immediately on connect
         async with state_lock:
-            snapshot = (
-                latest_grid_state, current_thread_id,
-                latest_plans, latest_ai_analysis
-            ) if latest_grid_state else None
-
-        if snapshot:
-            gs, tid, plans, ai = snapshot
-            await websocket.send_json({
-                "type":                    "plans",
-                "thread_id":               tid,
-                "timestamp":               datetime.now().isoformat(),
-                "grid_state":              gs,
-                "plans":                   format_plans_for_broadcast(plans),
-                "recommended_plan":        optimizer.select_recommended_plan(plans, ai.get("risk_level", "low")),
-                "ai_analysis":             ai,
-                "requires_human_approval": ai.get("requires_human_approval", False)
-            })
+            paused_count = len(paused_threads)
+        
+        await websocket.send_json({
+            "type": "welcome",
+            "timestamp": datetime.now().isoformat(),
+            "active_connections": len(manager.active_connections),
+            "paused_threads": paused_count,
+            "message": "Connected. Submit grid state via /grid-state endpoint to analyze."
+        })
 
         while True:
             data     = await websocket.receive_json()
@@ -402,20 +410,34 @@ async def websocket_endpoint(websocket: WebSocket):
                 plan_id   = data.get("plan_id")
                 note      = data.get("note", "No note provided")
                 thread_id = data.get("thread_id")
+                
+                print(f"\n\033[36m{'='*60}\033[0m")
+                print(f"\033[36m[HITL-APPLY] Received apply_plan request\033[0m")
+                print(f"  plan_id: {plan_id} (type: {type(plan_id)})")
+                print(f"  thread_id: {thread_id}")
+                print(f"  note: {note}")
+                print(f"  Full data received: {data}")
+                print(f"\033[36m{'='*60}\033[0m\n")
 
                 async with state_lock:
                     is_valid = thread_id and thread_id in paused_threads
+                    print(f"  is_valid (thread in paused_threads): {is_valid}")
+                    print(f"  paused_threads: {list(paused_threads)}")
                     if is_valid:
                         paused_threads.discard(thread_id)
                         grid_copy = dict(latest_grid_state)
                         ai_copy   = dict(latest_ai_analysis)
 
                 if not is_valid:
+                    error_msg = f"Thread '{thread_id}' not in paused threads. Paused threads: {list(paused_threads)}"
+                    print(f"  ❌ REJECTED: {error_msg}\n")
                     await manager.send_to_client(websocket, {
                         "type":    "error",
-                        "message": f"Thread '{thread_id}' not paused. Paused: {list(paused_threads)}"
+                        "message": error_msg
                     })
                     continue
+                    
+                print(f"  ✅ ACCEPTED: Thread removed from paused_threads\n")
 
                 logger.info(f"[HITL] ✅ Plan {plan_id} approved | thread: {thread_id}")
                 print(f"\n\033[92m[HITL] ✅ Plan {plan_id} approved | Thread: {thread_id}\033[0m")
@@ -464,6 +486,78 @@ async def websocket_endpoint(websocket: WebSocket):
                     "timestamp":     datetime.now().isoformat(),
                     "message":       f"✅ Operator applied Plan {plan_id}: {note}"
                 })
+                
+                # Calculate and broadcast updated grid state with load cuts applied
+                print(f"\033[36m[HITL] Calculating post-execution grid state...\033[0m")
+                
+                try:
+                    # Get the selected plan to calculate cuts
+                    if latest_plans and plan_id <= len(latest_plans):
+                        selected_plan = latest_plans[plan_id - 1]
+                        cuts_list = selected_plan.get("cuts", [])
+                        
+                        print(f"  Plan {plan_id} cuts: {cuts_list}")
+                        print(f"  Cuts type: {type(cuts_list)}")
+                        if cuts_list and len(cuts_list) > 0:
+                            print(f"  First cut: {cuts_list[0]} (type: {type(cuts_list[0])})")
+                        
+                        # Calculate power saved from cuts
+                        # Cuts can be either strings (zone names) or objects with power_mw
+                        total_power_saved = 0
+                        
+                        if cuts_list and isinstance(cuts_list[0], dict):
+                            # Cuts are detailed objects with power_mw
+                            total_power_saved = sum([cut.get("power_mw", 0) for cut in cuts_list])
+                        else:
+                            # Cuts are zone names - look up demand from grid
+                            zones_by_name = {z["name"]: z for z in grid_copy.get("zones", [])}
+                            for zone_name in cuts_list:
+                                if zone_name in zones_by_name:
+                                    total_power_saved += zones_by_name[zone_name].get("demand", 0)
+                        
+                        print(f"  Total power saved: {total_power_saved:.2f}MW")
+                        
+                        # Update grid state: reduce demand by power cuts
+                        updated_grid = dict(grid_copy)
+                        original_demand = updated_grid.get("demand", 0)
+                        updated_grid["demand"] = max(0, original_demand - total_power_saved)
+                        updated_grid["deficit_mw"] = max(0, updated_grid["demand"] - updated_grid.get("supply", 0))
+                        
+                        # Broadcast updated grid state
+                        await manager.broadcast_grid_state_update(
+                            updated_grid,
+                            f"Plan {plan_id} executed: {total_power_saved:.1f}MW load cut applied"
+                        )
+                        
+                        print(f"\033[36m[HITL] Grid state update broadcasted:\033[0m")
+                        print(f"  Original demand: {original_demand:.1f}MW")
+                        print(f"  Power cut: {total_power_saved:.1f}MW")
+                        print(f"  New demand: {updated_grid['demand']:.1f}MW")
+                        print(f"  Supply: {updated_grid.get('supply', 0):.1f}MW")
+                        print(f"  New deficit: {updated_grid['deficit_mw']:.1f}MW\n")
+                        
+                        # Broadcast agent activity
+                        await manager.broadcast_agent_activity(
+                            "OPERATOR",
+                            f"Approved {selected_plan.get('label', 'Plan')}: {note}",
+                            "complete"
+                        )
+                        print(f"\033[36m[HITL] Agent activity broadcasted\033[0m\n")
+                    else:
+                        print(f"\033[91m[HITL] ERROR: Could not find plan {plan_id} in latest_plans\033[0m")
+                        await manager.send_to_client(websocket, {
+                            "type": "error",
+                            "message": f"Plan {plan_id} not found in latest plans"
+                        })
+                except Exception as e:
+                    print(f"\033[91m[HITL] ERROR during grid state calculation: {e}\033[0m")
+                    import traceback
+                    traceback.print_exc()
+                    logger.error(f"[HITL] Grid update failed: {e}")
+                    await manager.send_to_client(websocket, {
+                        "type": "error",
+                        "message": f"Grid state update failed: {str(e)}"
+                    })
 
             # ── HITL: Operator rejects all plans ─────────────────────────────
             elif msg_type == "reject_plans":

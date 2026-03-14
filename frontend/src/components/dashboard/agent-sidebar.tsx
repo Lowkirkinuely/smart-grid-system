@@ -1,4 +1,5 @@
 import { BrainCircuit, Activity, Zap, CloudLightning, ShieldCheck } from "lucide-react";
+import { useGrid } from "../../lib/context";
 
 // --- SUB-COMPONENTS ---
 
@@ -9,7 +10,8 @@ const agents = [
   { id: "priority", name: "SENSORS", icon: ShieldCheck, status: 99, color: "#10B981" },
 ];
 
-const logs = [
+// Default logs for when no live data is available
+const defaultLogs = [
   { time: "14:56", tag: "Disaster", msg: "Load balancing optimization cycle complete. All regional nodes synchronized." },
   { time: "14:56", tag: "Grid", msg: "Cross-border power exchange negotiation in progress with Western Load Despatch Centre." },
   { time: "14:54", tag: "Demand", msg: "Weather update: Temperature rising in Rajasthan sector. Predicted surge: +12%." },
@@ -39,6 +41,24 @@ function AgentPulse({ agent }: { agent: typeof agents[0] }) {
 // --- MAIN COMPONENT ---
 
 export function AgentSidebar() {
+  const { gridState } = useGrid();
+  
+  // Use live agent logs if available, otherwise use defaults
+  const displayLogs = gridState.agentLogs.length > 0 ? gridState.agentLogs : defaultLogs;
+  
+  // Map both formats to consistent display format
+  const logsToDisplay = displayLogs.map(log => {
+    // Handle both live logs { time, agent, message } and default logs { time, tag, msg }
+    const agentName = (log.agent || log.tag || "AGENT").toUpperCase();
+    const cleanTag = agentName.split('_').pop() || agentName;
+    
+    return {
+      time: log.time,
+      tag: cleanTag,
+      msg: log.message || log.msg || ""
+    };
+  });
+
   return (
     <aside className="w-[540px] rounded-[2.5rem] bg-[#16191f]/60 backdrop-blur-3xl border-2 border-white/10 p-10 flex flex-col shadow-2xl h-full">
       {/* Header Section - Refined weight */}
@@ -80,7 +100,7 @@ export function AgentSidebar() {
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/30 pointer-events-none" />
         
         <div className="h-full overflow-y-auto custom-scrollbar space-y-8 pr-4">
-          {logs.map((log, i) => (
+          {logsToDisplay.map((log, i) => (
             <div key={i} className="flex gap-5 font-mono text-[18px] leading-relaxed border-l-2 border-white/5 pl-6 transition-all hover:border-purple-500/30 hover:bg-white/[0.01] py-1 rounded-r-xl">
               <span className="text-slate-600 shrink-0 font-bold tracking-tighter text-sm mt-1">[{log.time}]</span>
               <p className="tracking-tight">
