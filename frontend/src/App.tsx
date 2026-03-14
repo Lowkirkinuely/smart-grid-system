@@ -11,7 +11,7 @@ export default function PowerGridDashboard() {
       <main className="h-screen w-screen overflow-hidden bg-[#0B0D11] relative font-sans text-slate-200">
       {/* 1. BACKGROUND LAYER: The Map fills everything */}
       <div className="absolute inset-0 z-0">
-         <IndiaMap onStateClick={(name: string) => console.log(name)} />
+         <IndiaMap />
       </div>
 
       {/* 2. UI LAYER: Floating elements */}
