@@ -1,0 +1,12 @@
+{
+  "demand": 520,
+  "supply": 480,
+  "temperature": 44,
+  "zones": [
+    {"name": "hospital", "demand": 50, "protected": true},
+    {"name": "airport", "demand": 40, "protected": true},
+    {"name": "residential1", "demand": 100},
+    {"name": "residential2", "demand": 120},
+    {"name": "industry1", "demand": 150}
+  ]
+}
