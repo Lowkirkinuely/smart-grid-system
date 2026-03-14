@@ -1,0 +1,45 @@
+[33m6f80aea[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Merge pull request #3 from Lowkirkinuely/sanya
+[33m7e7afe0[m[33m ([m[1;31morigin/sanya[m[33m)[m Merge branch 'main' into sanya
+[33m593b468[m feat: add escalation simulation button with live UI panel
+[33m740c485[m feat: enhance optimization logic with rotation mode and yield potential calculation
+[33m1d52d47[m Merge branch 'main' of https://github.com/Lowkirkinuely/smart-grid-system
+[33m272cbbf[m fix: enhanced confidence calculation based on different strategies (and some ui around it)
+[33me8df81e[m Update agents.py
+[33m2364360[m chore: simplified map render (removed depreceated feats)
+[33m5b072d9[m chore: fix for empty response
+[33m17588ca[m Merge branch 'main' of https://github.com/Lowkirkinuely/smart-grid-system
+[33m7cdbf41[m chore: test_cleanup
+[33m4df3490[m Merge branch 'main' into sanya
+[33mf3864f0[m fix: better risk levels, upgraded LLM, fixed anomaly escalation, added svg-maps package
+[33m5d1d5eb[m chore: cleanup
+[33mc3be385[m fix: better risk levels, upgraded LLM, fixed anomaly escalation
+[33mcf555ad[m[33m ([m[1;31morigin/rishit[m[33m)[m Merge branch 'main' of https://github.com/Lowkirkinuely/smart-grid-system
+[33m5df6f79[m chore: save UI progress before pulling MongoDB updates
+[33m44759f8[m local changes before pulling
+[33m9fe8ca9[m fix: upgrade LLM to 70b for better risk reasoning
+[33mb257d2b[m feat: MongoDB persistence - grid history, AI analysis logs, human decision audit trail, ML training history
+[33m4a78fc0[m fix: 15s interval, balanced risk levels across scenarios
+[33m009f5e6[m fix: restore frontend files and remove nested git
+[33m6c4ee33[m static india map UI and fixed folder casing
+[33ma5dce4a[m Merge pull request #2 from Lowkirkinuely/sanya
+[33m515e75e[m feat: real India map with accurate state boundaries
+[33ma40b41a[m feat: simulation service - weather.py + simulator.py with escalate/weather/cities/random modes
+[33m1d5e8ca[m feat: production backend complete - class-based agents, GridOptimizer, resilience, schemas, ML/LLM fusion, HITL, async safety
+[33m6261925[m feat: add simulation folder with weather module
+[33mdf69d99[m feat: move simulator to simulation folder, add weather module
+[33m416498c[m feat: add grid simulator script
+[33m862fc31[m fix: async event loop safety - to_thread, state_lock, fail-fast key check
+[33m113924d[m feat: ML model + online learning + ML/LLM fusion + disagreement HITL
+[33m649de15[m Merge branch 'main' of https://github.com/Lowkirkinuely/smart-grid-system
+[33m2bc49ee[m feat: integrated mission control dashboard UI
+[33mf33eea8[m fix: parallel agent_errors reducer - Annotated merge_dicts for concurrent graph writes
+[33m64bee08[m feat: production-ready backend - thread validation, agent timeouts, fallbacks, heartbeat
+[33mdba4b18[m feat: parallel LangGraph agents + HITL interrupt + coloured terminal output
+[33mbf9eb70[m feat: LangGraph multi-agent AI pipeline working with llama-3.1-8b-instant
+[33m8ee5df2[m feat: backend - FastAPI + OR-Tools optimizer + LangGraph multi-agent + HITL WebSocket
+[33maa34b45[m your commit message
+[33m7873c76[m Merge pull request #1 from Lowkirkinuely/frontend-ui-rhythima
+[33m93a288f[m[33m ([m[1;31morigin/frontend-ui-rhythima[m[33m, [m[1;32mfrontend-ui-rhythima[m[33m)[m feat: initialize frontend with react-ts and tailwind v4
+[33me1568e0[m Update project title and description in README
+[33m6d1bf4b[m ping
+[33meefee63[m Initial commit
