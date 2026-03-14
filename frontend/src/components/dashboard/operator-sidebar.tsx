@@ -36,19 +36,21 @@ export function OperatorSidebar() {
     try {
       const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
       
+      // Fixed zone demands - sliders don't affect zone sizes, only optimizer strategy
       const payload = {
-        demand: 520 + (hospitalProtection * 2),
-        supply: 480,
+        demand: 520,  // Fixed total demand
+        supply: 480,  // Fixed supply results in ~40MW deficit
         temperature: 42.5,
         zones: [
-          { name: "Hospital_North", demand: 150.0 * (hospitalProtection / 100), protected: true, type: "hospital" },
-          { name: "Residential_South", demand: 200.0, protected: false, type: "residential" },
-          { name: "Industrial_East", demand: 100.0 * (industrialShedding / 100), protected: false, type: "industrial" },
-          { name: "Residential_West", demand: 70.0 * (residentialRotation / 100), protected: false, type: "residential" }
+          { name: "Hospital_North", demand: 150, protected: true, type: "hospital" },
+          { name: "Residential_South", demand: 200, protected: false, type: "residential" },
+          { name: "Industrial_East", demand: 100, protected: false, type: "industrial" },
+          { name: "Residential_West", demand: 70, protected: false, type: "residential" }
         ]
       };
       
       console.log("[Operator] Sending grid state:", payload);
+      console.log(`[Operator] Operator preferences: Hospital protection=${hospitalProtection}%, Industrial shedding=${industrialShedding}%, Residential rotation=${residentialRotation}%`);
       
       const response = await fetch(`${BACKEND_URL}/grid-state`, {
         method: "POST",
@@ -84,9 +86,9 @@ export function OperatorSidebar() {
       </div>
 
       <div className="flex-1 space-y-8 overflow-auto custom-scrollbar pr-3">
-        <PrioritySlider label="Hospital Protection" icon={Building2} value={hospitalProtection} onChange={setHospitalProtection} description="LIFELINE SERVICES" color="#10B981" />
-        <PrioritySlider label="Industrial Load" icon={Factory} value={industrialShedding} onChange={setIndustrialShedding} description="SECTOR REDUCTION" color="#F59E0B" />
-        <PrioritySlider label="Residential Rotation" icon={Home} value={residentialRotation} onChange={setResidentialRotation} description="GRID BALANCING" color="#3B82F6" />
+        <PrioritySlider label="Hospital Protection" icon={Building2} value={hospitalProtection} onChange={setHospitalProtection} description="LIFELINE ALWAYS PROTECTED" color="#10B981" />
+        <PrioritySlider label="Industrial Priority" icon={Factory} value={industrialShedding} onChange={setIndustrialShedding} description="CUT INDUSTRIALSECTORS FIRST" color="#F59E0B" />
+        <PrioritySlider label="Residential Rotation" icon={Home} value={residentialRotation} onChange={setResidentialRotation} description="DISTRIBUTIVE ZONELEVERAGING" color="#3B82F6" />
         
         <div className="pt-8 border-t-2 border-white/5">
           <Button 

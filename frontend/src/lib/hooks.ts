@@ -67,22 +67,11 @@ export function useGridState() {
       
       setState((prev) => {
         const incomingDemand = message.grid_state?.demand || 0;
-        const hasValidExecutedState = prev.executedDemand !== undefined && prev.executedDemand > 0;
         
-        // If we have an executed state and incoming demand >= executed demand, 
-        // it means user resubmitted with same/higher scenario - preserve executed state
-        const shouldPreserveExecutedState = hasValidExecutedState && incomingDemand >= prev.executedDemand;
-        
-        console.log("[Grid Hook] Demand comparison:", {
-          incomingDemand,
-          executedDemand: prev.executedDemand,
-          preserveExecuted: shouldPreserveExecutedState
-        });
-        
+        // Always use the incoming demand from backend - it's the current grid state
         const newState = {
           ...prev,
-          // Use executed demand if applicable, otherwise use incoming demand
-          demand: shouldPreserveExecutedState ? prev.executedDemand : (message.grid_state?.demand || 0),
+          demand: incomingDemand,
           supply: message.grid_state?.supply || prev.supply,
           temperature: message.grid_state?.temperature || prev.temperature,
           plans: message.plans || [],
@@ -93,11 +82,10 @@ export function useGridState() {
           requiresHumanApproval: message.requires_human_approval || false,
           threadId: message.thread_id || "no-thread",
           isLoading: false,
-          // Only reset executed demand if slider values changed (incoming demand is lower)
-          executedDemand: incomingDemand < (prev.executedDemand || Infinity) ? undefined : prev.executedDemand,
+          // Don't preserve executed demand when new plans arrive - reset it
+          executedDemand: undefined,
         };
         console.log("[Grid Hook] State updated with new plans:", newState.plans.length, "plans | Demand:", newState.demand, "MW");
-        return newState;
         return newState;
       });
     });

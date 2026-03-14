@@ -205,7 +205,7 @@ export function PlanDrawer() {
       icon: icons[idx % icons.length],
       color: colors[idx % colors.length],
       harm: plan.harm_score || 5,
-      saved: plan.estimated_loss_mw || 0,
+      saved: plan.power_saved || 0,
       confidence: plan.confidence || 75,
     };
   });
