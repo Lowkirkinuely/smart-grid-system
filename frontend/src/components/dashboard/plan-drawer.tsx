@@ -85,8 +85,8 @@ function PlanDetailsModal({ plan, isOpen, onClose }: { plan: any; isOpen: boolea
               <Sparkles className="h-5 w-5 text-purple-400" />
             </div>
             <div className="min-w-0">
-              <h3 className="text-lg font-black text-white leading-tight truncate">{plan.label || plan.name}</h3>
-              <p className="text-xs text-white/50 mt-0.5 line-clamp-2">{plan.description || "Strategy details"}</p>
+              <h3 className="text-lg font-black text-white leading-tight truncate">{plan.name}</h3>
+              <p className="text-xs text-white/50 mt-0.5 line-clamp-2">{plan.description || plan.note || "Strategy details"}</p>
             </div>
           </div>
           <button 
@@ -108,7 +108,7 @@ function PlanDetailsModal({ plan, isOpen, onClose }: { plan: any; isOpen: boolea
               <div className="text-[9px] text-white/50 uppercase tracking-widest mt-0.5">Confidence</div>
             </div>
             <div className="text-center">
-              <div className="text-xl font-bold text-emerald-400">{plan.estimated_loss_mw || plan.power_saved || 0} MW</div>
+              <div className="text-xl font-bold text-emerald-400">{plan.power_saved || 0} MW</div>
               <div className="text-[9px] text-white/50 uppercase tracking-widest mt-0.5">Saved</div>
             </div>
             <div className="text-center">
@@ -132,7 +132,7 @@ function PlanDetailsModal({ plan, isOpen, onClose }: { plan: any; isOpen: boolea
                       <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400"
-                          style={{ width: `${(cut.power_mw / totalCut) * 100}%` }}
+                          style={{ width: `${totalCut > 0 ? (cut.power_mw / totalCut) * 100 : 0}%` }}
                         />
                       </div>
                       <span className="text-xs text-white/50 w-8 text-right">
@@ -193,7 +193,6 @@ export function PlanDrawer() {
 
   useEffect(() => {
     console.log("[PlanDrawer] Plans updated:", gridState.plans.length, "plans");
-    console.log("[PlanDrawer] Current plans:", gridState.plans);
   }, [gridState.plans]);
 
   // Map backend plans to UI format
@@ -202,6 +201,7 @@ export function PlanDrawer() {
     const colors = ["#10B981", "#8B5CF6", "#F59E0B"];
     return {
       ...plan,
+      name: plan.label || plan.name || `Plan ${idx + 1}`, // FIX: Prefer label from backend
       icon: icons[idx % icons.length],
       color: colors[idx % colors.length],
       harm: plan.harm_score || 5,
@@ -214,15 +214,14 @@ export function PlanDrawer() {
     setExecutingPlan(planId);
     console.log(`[PlanDrawer] Executing plan ${planId}: ${planName}`);
     try {
-      applyPlan(planId, `Executing ${planName}`);
+      // FIX: Pass the validated planName to ensure logs aren't "undefined"
+      applyPlan(planId, `Operator authorized ${planName}`);
       
       // Wait for execution feedback
       await new Promise(resolve => setTimeout(resolve, 1200));
       
       setExecutedPlans(prev => new Set(prev).add(planId));
       setExecutingPlan(null);
-      
-      console.log(`[PlanDrawer] Plan ${planId} executed successfully`);
       
       // Show success state for 3 seconds
       setTimeout(() => {
@@ -262,7 +261,7 @@ export function PlanDrawer() {
             <div className="flex items-center gap-8">
                 <div className="flex flex-col items-end justify-center">
                     <span className="text-2xl font-black text-emerald-400 font-mono tracking-tighter leading-none">
-                      {gridState.plans.reduce((sum, p) => sum + (p.estimated_loss_mw || 0), 0).toFixed(0)} MW
+                      {gridState.plans.reduce((sum, p) => sum + (p.power_saved || 0), 0).toFixed(0)} MW
                     </span>
                     <span className="text-[9px] font-bold text-emerald-500/40 uppercase tracking-widest leading-none mt-1">Yield Potential</span>
                 </div>
@@ -296,7 +295,7 @@ export function PlanDrawer() {
                     </div>
                     <div className="flex-1">
                       <h3 className="text-xl font-black text-white leading-none mb-1 tracking-tight">{plan.name}</h3>
-                      <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{plan.description}</p>
+                      <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest truncate max-w-[180px]">{plan.description || plan.note}</p>
                     </div>
                   </div>
                   <button 
@@ -310,7 +309,7 @@ export function PlanDrawer() {
                 
                 <div className="flex justify-around mb-4 border-y border-white/5 py-4">
                    <CircularGauge value={plan.confidence} max={100} color={plan.color} label="Confidence" />
-                   <CircularGauge value={Math.abs(plan.saved)} max={50} color="#10B981" label="MW Saved" />
+                   <CircularGauge value={Math.abs(plan.saved)} max={200} color="#10B981" label="MW Saved" />
                 </div>
 
                 <div className="mb-4">

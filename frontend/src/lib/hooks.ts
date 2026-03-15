@@ -171,12 +171,12 @@ export function useGridState() {
 
   // Apply a plan
   const applyPlan = useCallback(
-    (planId: string, note: string = "") => {
+    (planId: string, note: string = "Manual authorization via Dashboard") => {
       sendMessage({
         type: "apply_plan",
         plan_id: planId,
         thread_id: state.threadId,
-        note,
+        note: note || "Manual authorization via Dashboard", // Ensures note is never empty
       });
     },
     [state.threadId, sendMessage]
