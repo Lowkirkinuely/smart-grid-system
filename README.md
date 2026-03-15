@@ -14,12 +14,12 @@ The system operates as an **end-to-end pipeline**, moving from raw environmental
 
 ```mermaid
 graph TD
-    A[Weather and Disaster APIs] --> B[Simulation Service - SUM]
-    B --> C[FastAPI Backend - Rhythima Madaan]
-    C --> D[AI Multi-Agent System - SAN]
-    D --> E[Optimization Engine - Rhythima Madaan]
+    A[Weather and Disaster APIs] --> B[Simulation Service]
+    B --> C[FastAPI Backend]
+    C --> D[AI Multi-Agent System]
+    D --> E[Optimization Engine]
     E --> F[WebSocket Server]
-    F --> G[React Dashboard - RIS]
+    F --> G[React Dashboard]
     G --> H[Human Operator Decision]
     H --> I[MongoDB Audit Trail]
 ```
@@ -183,13 +183,12 @@ python simulation/simulator.py
 
 # Team Lowkirkinuely
 
-- **RIS** — Frontend Dashboard Development  
-- **Rhythima Madaan (RHY)** — Backend API and Optimization Engine  
-- **SAN** — AI Agent Analysis System  
-- **SUM** — Data Simulation and External APIs  
+- Frontend Dashboard Development  
+- Backend API and Optimization Engine  
+- AI Agent Analysis System  
+- Data Simulation and External APIs  
 
 ---
 
-# License
 
-This project was developed for **hackathon purposes** and is licensed under the **MIT License**.
+
